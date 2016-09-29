@@ -31,6 +31,11 @@ version <next>:
 - MediaCodec HEVC decoding
 - TrueHD encoder
 - Meridian Lossless Packing (MLP) encoder
+- Non-Local Means (nlmeans) denoising filter
+- sdl2 output device
+- sdl2 support for ffplay
+- sdl1 output device and sdl1 support removed
+- extended mov edit list support
 
 
 version 3.1:
