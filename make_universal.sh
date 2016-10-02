@@ -1,11 +1,5 @@
-./configure_i386.sh && \
-make clean && \
-make -j5 && \
-make install && \ 
-./configure_x86_64.sh && \
-make clean && \
-make -j5 && \
-make install && \
+./configure_i386.sh && make clean && make -j5 && make install && \
+./configure_x86_64.sh && make clean && make -j5 && make install && \
 ./make_fat_libs.sh
 
 
