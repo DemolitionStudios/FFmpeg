@@ -770,6 +770,10 @@ FF_ENABLE_DEPRECATION_WARNINGS
                             st->codecpar->extradata_size = esize - 10 * 4;
                         } else
                             st->codecpar->extradata_size =  size - 10 * 4;
+                        if (st->codecpar->extradata) {
+                            av_log(s, AV_LOG_WARNING, "New extradata in strf chunk, freeing previous one.\n");
+                            av_freep(&st->codecpar->extradata);
+                        }
                         if (ff_get_extradata(s, st->codecpar, pb, st->codecpar->extradata_size) < 0)
                             return AVERROR(ENOMEM);
                     }
@@ -925,6 +929,10 @@ FF_ENABLE_DEPRECATION_WARNINGS
                 st = s->streams[stream_index];
 
                 if (size<(1<<30)) {
+                    if (st->codecpar->extradata) {
+                        av_log(s, AV_LOG_WARNING, "New extradata in strd chunk, freeing previous one.\n");
+                        av_freep(&st->codecpar->extradata);
+                    }
                     if (ff_get_extradata(s, st->codecpar, pb, size) < 0)
                         return AVERROR(ENOMEM);
                 }
@@ -984,15 +992,21 @@ FF_ENABLE_DEPRECATION_WARNINGS
             }
         default:
             if (size > 1000000) {
+                char tag_buf[32];
+                av_get_codec_tag_string(tag_buf, sizeof(tag_buf), tag);
                 av_log(s, AV_LOG_ERROR,
                        "Something went wrong during header parsing, "
-                       "I will ignore it and try to continue anyway.\n");
+                       "tag %s has size %u, "
+                       "I will ignore it and try to continue anyway.\n",
+                       tag_buf, size);
                 if (s->error_recognition & AV_EF_EXPLODE)
                     goto fail;
                 avi->movi_list = avio_tell(pb) - 4;
                 avi->movi_end  = avi->fsize;
                 goto end_of_header;
             }
+        /* Do not fail for very large idx1 tags */
+        case MKTAG('i', 'd', 'x', '1'):
             /* skip tag */
             size += (size & 1);
             avio_skip(pb, size);

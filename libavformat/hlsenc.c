@@ -183,6 +183,7 @@ static int hls_delete_old_segments(HLSContext *hls) {
     segment = hls->old_segments;
     while (segment) {
         playlist_duration -= segment->duration;
+        hls->initial_prog_date_time += segment->duration;
         previous_segment = segment;
         segment = previous_segment->next;
         if (playlist_duration <= -previous_segment->duration) {
@@ -364,8 +365,7 @@ static int hls_append_segment(struct AVFormatContext *s, HLSContext *hls, double
                               int64_t pos, int64_t size)
 {
     HLSSegment *en = av_malloc(sizeof(*en));
-    char *tmp, *p;
-    const char *pl_dir, *filename;
+    const char  *filename;
     int ret;
 
     if (!en)
@@ -374,19 +374,7 @@ static int hls_append_segment(struct AVFormatContext *s, HLSContext *hls, double
     filename = av_basename(hls->avf->filename);
 
     if (hls->use_localtime_mkdir) {
-        /* Possibly prefix with mkdir'ed subdir, if playlist share same
-         * base path. */
-        tmp = av_strdup(s->filename);
-        if (!tmp) {
-            av_free(en);
-            return AVERROR(ENOMEM);
-        }
-
-        pl_dir = av_dirname(tmp);
-        p = hls->avf->filename;
-        if (strstr(p, pl_dir) == p)
-            filename = hls->avf->filename + strlen(pl_dir) + 1;
-        av_free(tmp);
+        filename = hls->avf->filename;
     }
     av_strlcpy(en->filename, filename, sizeof(en->filename));
 
@@ -529,7 +517,7 @@ static int hls_window(AVFormatContext *s, int last)
     }
 
     if (!use_rename && !warned_non_file++)
-        av_log(s, AV_LOG_ERROR, "Cannot use rename on non file protocol, this may lead to races and temporarly partial files\n");
+        av_log(s, AV_LOG_ERROR, "Cannot use rename on non file protocol, this may lead to races and temporary partial files\n");
 
     set_http_options(&options, hls);
     snprintf(temp_filename, sizeof(temp_filename), use_rename ? "%s.tmp" : "%s", s->filename);
@@ -699,7 +687,7 @@ static int hls_start(AVFormatContext *s)
         } else if (av_get_frame_filename2(oc->filename, sizeof(oc->filename),
                                   c->basename, c->wrap ? c->sequence % c->wrap : c->sequence,
                                   AV_FRAME_FILENAME_FLAGS_MULTIPLE) < 0) {
-            av_log(oc, AV_LOG_ERROR, "Invalid segment filename template '%s' you can try use -use_localtime 1 with it\n", c->basename);
+            av_log(oc, AV_LOG_ERROR, "Invalid segment filename template '%s' you can try to use -use_localtime 1 with it\n", c->basename);
             return AVERROR(EINVAL);
         }
         if( c->vtt_basename) {

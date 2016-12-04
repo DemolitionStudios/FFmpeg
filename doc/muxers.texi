@@ -147,6 +147,16 @@ Place AAC sequence header based on audio stream data.
 
 @item no_sequence_end
 Disable sequence end tag.
+
+@item no_metadata
+Disable metadata tag.
+
+@item no_duration_filesize
+Disable duration and filesize in metadata when they are equal to zero
+at the end of stream. (Be used to non-seekable living stream).
+
+@item add_keyframe_index
+Used to facilitate seeking; particularly for HTTP pseudo streaming.
 @end table
 @end table
 
@@ -295,14 +305,14 @@ the loops:
 ffmpeg -i INPUT -loop 10 -final_delay 500 out.gif
 @end example
 
-Note 1: if you wish to extract the frames in separate GIF files, you need to
+Note 1: if you wish to extract the frames into separate GIF files, you need to
 force the @ref{image2} muxer:
 @example
 ffmpeg -i INPUT -c:v gif -f image2 "out%d.gif"
 @end example
 
-Note 2: the GIF format has a very small time base: the delay between two frames
-can not be smaller than one centi second.
+Note 2: the GIF format has a very large time base: the delay between two frames
+can therefore not be smaller than one centi second.
 
 @anchor{hash}
 @section hash
@@ -635,7 +645,7 @@ The following example shows how to use @command{ffmpeg} for creating a
 sequence of files @file{img-001.jpeg}, @file{img-002.jpeg}, ...,
 taking one image every second from the input video:
 @example
-ffmpeg -i in.avi -vsync 1 -r 1 -f image2 'img-%03d.jpeg'
+ffmpeg -i in.avi -vsync cfr -r 1 -f image2 'img-%03d.jpeg'
 @end example
 
 Note that with @command{ffmpeg}, if the format is not specified with the
@@ -643,12 +653,12 @@ Note that with @command{ffmpeg}, if the format is not specified with the
 format, the image2 muxer is automatically selected, so the previous
 command can be written as:
 @example
-ffmpeg -i in.avi -vsync 1 -r 1 'img-%03d.jpeg'
+ffmpeg -i in.avi -vsync cfr -r 1 'img-%03d.jpeg'
 @end example
 
 Note also that the pattern must not necessarily contain "%d" or
 "%0@var{N}d", for example to create a single image file
-@file{img.jpeg} from the input video you can employ the command:
+@file{img.jpeg} from the start of the input video you can employ the command:
 @example
 ffmpeg -i in.avi -f image2 -frames:v 1 img.jpeg
 @end example
@@ -1055,6 +1065,8 @@ Use LATM packetization for AAC.
 Reemit PAT and PMT at each video frame.
 @item system_b
 Conform to System B (DVB) instead of System A (ATSC).
+@item initial_discontinuity
+Mark the initial packet of each stream as discontinuity.
 @end table
 
 @subsection Example
@@ -1513,14 +1525,14 @@ as a list of @var{key}=@var{value} pairs separated by ':'.
 
 @item drop_pkts_on_overflow @var{bool}
 If set to 1 (true), in case the fifo queue fills up, packets will be dropped
-rather than blocking the encoder. This allows to continue streaming without
-delaying the input, at the cost of ommiting part of the stream. By default
+rather than blocking the encoder. This makes it possible to continue streaming without
+delaying the input, at the cost of omitting part of the stream. By default
 this option is set to 0 (false), so in such cases the encoder will be blocked
 until the muxer processes some of the packets and none of them is lost.
 
 @item attempt_recovery @var{bool}
 If failure occurs, attempt to recover the output. This is especially useful
-when used with network output, allows to restart streaming transparently.
+when used with network output, since it makes it possible to restart streaming transparently.
 By default this option is set to 0 (false).
 
 @item max_recovery_attempts

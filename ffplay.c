@@ -165,6 +165,7 @@ typedef struct Frame {
     int format;
     AVRational sar;
     int uploaded;
+    int flip_v;
 } Frame;
 
 typedef struct FrameQueue {
@@ -229,9 +230,6 @@ typedef struct VideoState {
     Decoder auddec;
     Decoder viddec;
     Decoder subdec;
-
-    int viddec_width;
-    int viddec_height;
 
     int audio_stream;
 
@@ -591,9 +589,7 @@ static int decoder_decode_frame(Decoder *d, AVFrame *frame, AVSubtitle *sub) {
                 if (got_frame) {
                     if (decoder_reorder_pts == -1) {
                         frame->pts = av_frame_get_best_effort_timestamp(frame);
-                    } else if (decoder_reorder_pts) {
-                        frame->pts = frame->pkt_pts;
-                    } else {
+                    } else if (!decoder_reorder_pts) {
                         frame->pts = frame->pkt_dts;
                     }
                 }
@@ -603,9 +599,7 @@ static int decoder_decode_frame(Decoder *d, AVFrame *frame, AVSubtitle *sub) {
                 if (got_frame) {
                     AVRational tb = (AVRational){1, frame->sample_rate};
                     if (frame->pts != AV_NOPTS_VALUE)
-                        frame->pts = av_rescale_q(frame->pts, d->avctx->time_base, tb);
-                    else if (frame->pkt_pts != AV_NOPTS_VALUE)
-                        frame->pts = av_rescale_q(frame->pkt_pts, av_codec_get_pkt_timebase(d->avctx), tb);
+                        frame->pts = av_rescale_q(frame->pts, av_codec_get_pkt_timebase(d->avctx), tb);
                     else if (d->next_pts != AV_NOPTS_VALUE)
                         frame->pts = av_rescale_q(d->next_pts, d->next_pts_tb, tb);
                     if (frame->pts != AV_NOPTS_VALUE) {
@@ -868,12 +862,20 @@ static int upload_texture(SDL_Texture *tex, AVFrame *frame, struct SwsContext **
     int ret = 0;
     switch (frame->format) {
         case AV_PIX_FMT_YUV420P:
+            if (frame->linesize[0] < 0 || frame->linesize[1] < 0 || frame->linesize[2] < 0) {
+                av_log(NULL, AV_LOG_ERROR, "Negative linesize is not supported for YUV.\n");
+                return -1;
+            }
             ret = SDL_UpdateYUVTexture(tex, NULL, frame->data[0], frame->linesize[0],
                                                   frame->data[1], frame->linesize[1],
                                                   frame->data[2], frame->linesize[2]);
             break;
         case AV_PIX_FMT_BGRA:
-            ret = SDL_UpdateTexture(tex, NULL, frame->data[0], frame->linesize[0]);
+            if (frame->linesize[0] < 0) {
+                ret = SDL_UpdateTexture(tex, NULL, frame->data[0] + frame->linesize[0] * (frame->height - 1), -frame->linesize[0]);
+            } else {
+                ret = SDL_UpdateTexture(tex, NULL, frame->data[0], frame->linesize[0]);
+            }
             break;
         default:
             /* This should only happen if we are not using avfilter... */
@@ -956,9 +958,10 @@ static void video_image_display(VideoState *is)
             if (upload_texture(vp->bmp, vp->frame, &is->img_convert_ctx) < 0)
                 return;
             vp->uploaded = 1;
+            vp->flip_v = vp->frame->linesize[0] < 0;
         }
 
-        SDL_RenderCopy(renderer, vp->bmp, NULL, &rect);
+        SDL_RenderCopyEx(renderer, vp->bmp, NULL, &rect, 0, NULL, vp->flip_v ? SDL_FLIP_VERTICAL : 0);
         if (sp) {
 #if USE_ONEPASS_SUBTITLE_RENDER
             SDL_RenderCopy(renderer, is->sub_texture, NULL, &rect);
@@ -1279,6 +1282,10 @@ static int video_open(VideoState *is, Frame *vp)
         if (window) {
             SDL_RendererInfo info;
             renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+            if (!renderer) {
+                av_log(NULL, AV_LOG_WARNING, "Failed to initialize a hardware accelerated renderer: %s\n", SDL_GetError());
+                renderer = SDL_CreateRenderer(window, -1, 0);
+            }
             if (renderer) {
                 if (!SDL_GetRendererInfo(renderer, &info))
                     av_log(NULL, AV_LOG_VERBOSE, "Initialized %s renderer.\n", info.name);
@@ -1780,9 +1787,6 @@ static int get_video_frame(VideoState *is, AVFrame *frame)
 
         frame->sample_aspect_ratio = av_guess_sample_aspect_ratio(is->ic, is->video_st, frame);
 
-        is->viddec_width  = frame->width;
-        is->viddec_height = frame->height;
-
         if (framedrop>0 || (framedrop && get_master_sync_type(is) != AV_SYNC_VIDEO_MASTER)) {
             if (frame->pts != AV_NOPTS_VALUE) {
                 double diff = dpts - get_master_clock(is);
@@ -2224,7 +2228,6 @@ static int video_thread(void *arg)
 static int subtitle_thread(void *arg)
 {
     VideoState *is = arg;
-    AVCodecParameters *codecpar = is->subtitle_st->codecpar;
     Frame *sp;
     int got_subtitle;
     double pts;
@@ -2243,8 +2246,8 @@ static int subtitle_thread(void *arg)
                 pts = sp->sub.pts / (double)AV_TIME_BASE;
             sp->pts = pts;
             sp->serial = is->subdec.pkt_serial;
-            sp->width = codecpar->width;
-            sp->height = codecpar->height;
+            sp->width = is->subdec.avctx->width;
+            sp->height = is->subdec.avctx->height;
             sp->uploaded = 0;
 
             /* now we can update the picture count */
@@ -2687,9 +2690,6 @@ static int stream_component_open(VideoState *is, int stream_index)
     case AVMEDIA_TYPE_VIDEO:
         is->video_stream = stream_index;
         is->video_st = ic->streams[stream_index];
-
-        is->viddec_width  = avctx->width;
-        is->viddec_height = avctx->height;
 
         decoder_init(&is->viddec, avctx, &is->videoq, is->continue_read_thread);
         if ((ret = decoder_start(&is->viddec, video_thread, is)) < 0)

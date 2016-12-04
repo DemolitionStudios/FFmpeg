@@ -2749,8 +2749,11 @@ static av_always_inline void mc_luma_unscaled(VP9Context *s, vp9_mc_func (*mc)[2
     // the longest loopfilter of the next sbrow
     th = (y + bh + 4 * !!my + 7) >> 6;
     ff_thread_await_progress(ref_frame, FFMAX(th, 0), 0);
+    // The arm/aarch64 _hv filters read one more row than what actually is
+    // needed, so switch to emulated edge one pixel sooner vertically
+    // (!!my * 5) than horizontally (!!mx * 4).
     if (x < !!mx * 3 || y < !!my * 3 ||
-        x + !!mx * 4 > w - bw || y + !!my * 4 > h - bh) {
+        x + !!mx * 4 > w - bw || y + !!my * 5 > h - bh) {
         s->vdsp.emulated_edge_mc(s->edge_emu_buffer,
                                  ref - !!my * 3 * ref_stride - !!mx * 3 * bytesperpixel,
                                  160, ref_stride,
@@ -2784,8 +2787,11 @@ static av_always_inline void mc_chroma_unscaled(VP9Context *s, vp9_mc_func (*mc)
     // the longest loopfilter of the next sbrow
     th = (y + bh + 4 * !!my + 7) >> (6 - s->ss_v);
     ff_thread_await_progress(ref_frame, FFMAX(th, 0), 0);
+    // The arm/aarch64 _hv filters read one more row than what actually is
+    // needed, so switch to emulated edge one pixel sooner vertically
+    // (!!my * 5) than horizontally (!!mx * 4).
     if (x < !!mx * 3 || y < !!my * 3 ||
-        x + !!mx * 4 > w - bw || y + !!my * 4 > h - bh) {
+        x + !!mx * 4 > w - bw || y + !!my * 5 > h - bh) {
         s->vdsp.emulated_edge_mc(s->edge_emu_buffer,
                                  ref_u - !!my * 3 * src_stride_u - !!mx * 3 * bytesperpixel,
                                  160, src_stride_u,
@@ -2871,7 +2877,10 @@ static av_always_inline void mc_luma_scaled(VP9Context *s, vp9_scaled_mc_func sm
     // the longest loopfilter of the next sbrow
     th = (y + refbh_m1 + 4 + 7) >> 6;
     ff_thread_await_progress(ref_frame, FFMAX(th, 0), 0);
-    if (x < 3 || y < 3 || x + 4 >= w - refbw_m1 || y + 4 >= h - refbh_m1) {
+    // The arm/aarch64 _hv filters read one more row than what actually is
+    // needed, so switch to emulated edge one pixel sooner vertically
+    // (y + 5 >= h - refbh_m1) than horizontally (x + 4 >= w - refbw_m1).
+    if (x < 3 || y < 3 || x + 4 >= w - refbw_m1 || y + 5 >= h - refbh_m1) {
         s->vdsp.emulated_edge_mc(s->edge_emu_buffer,
                                  ref - 3 * ref_stride - 3 * bytesperpixel,
                                  288, ref_stride,
@@ -2937,7 +2946,10 @@ static av_always_inline void mc_chroma_scaled(VP9Context *s, vp9_scaled_mc_func 
     // the longest loopfilter of the next sbrow
     th = (y + refbh_m1 + 4 + 7) >> (6 - s->ss_v);
     ff_thread_await_progress(ref_frame, FFMAX(th, 0), 0);
-    if (x < 3 || y < 3 || x + 4 >= w - refbw_m1 || y + 4 >= h - refbh_m1) {
+    // The arm/aarch64 _hv filters read one more row than what actually is
+    // needed, so switch to emulated edge one pixel sooner vertically
+    // (y + 5 >= h - refbh_m1) than horizontally (x + 4 >= w - refbw_m1).
+    if (x < 3 || y < 3 || x + 4 >= w - refbw_m1 || y + 5 >= h - refbh_m1) {
         s->vdsp.emulated_edge_mc(s->edge_emu_buffer,
                                  ref_u - 3 * src_stride_u - 3 * bytesperpixel,
                                  288, src_stride_u,
@@ -3705,11 +3717,10 @@ static av_always_inline void adapt_prob(uint8_t *p, unsigned ct0, unsigned ct1,
     if (!ct)
         return;
 
+    update_factor = FASTDIV(update_factor * FFMIN(ct, max_count), max_count);
     p1 = *p;
-    p2 = ((ct0 << 8) + (ct >> 1)) / ct;
+    p2 = ((((int64_t) ct0) << 8) + (ct >> 1)) / ct;
     p2 = av_clip(p2, 1, 255);
-    ct = FFMIN(ct, max_count);
-    update_factor = FASTDIV(update_factor * ct, max_count);
 
     // (p1 * (256 - update_factor) + p2 * update_factor + 128) >> 8
     *p = p1 + (((p2 - p1) * update_factor + 128) >> 8);
@@ -3992,7 +4003,12 @@ static int vp9_decode_frame(AVCodecContext *ctx, void *frame,
         }
         if ((res = av_frame_ref(frame, s->s.refs[ref].f)) < 0)
             return res;
+        ((AVFrame *)frame)->pts = pkt->pts;
+#if FF_API_PKT_PTS
+FF_DISABLE_DEPRECATION_WARNINGS
         ((AVFrame *)frame)->pkt_pts = pkt->pts;
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
         ((AVFrame *)frame)->pkt_dts = pkt->dts;
         for (i = 0; i < 8; i++) {
             if (s->next_refs[i].f->buf[0])

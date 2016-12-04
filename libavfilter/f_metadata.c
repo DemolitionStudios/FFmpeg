@@ -315,14 +315,14 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
     case METADATA_PRINT:
         if (!s->key && e) {
             s->print(ctx, "frame:%-4"PRId64" pts:%-7s pts_time:%-7s\n",
-                     inlink->frame_count, av_ts2str(frame->pts), av_ts2timestr(frame->pts, &inlink->time_base));
+                     inlink->frame_count_out, av_ts2str(frame->pts), av_ts2timestr(frame->pts, &inlink->time_base));
             s->print(ctx, "%s=%s\n", e->key, e->value);
             while ((e = av_dict_get(*metadata, "", e, AV_DICT_IGNORE_SUFFIX)) != NULL) {
                 s->print(ctx, "%s=%s\n", e->key, e->value);
             }
         } else if (e && e->value && (!s->value || (e->value && s->compare(s, e->value, s->value)))) {
             s->print(ctx, "frame:%-4"PRId64" pts:%-7s pts_time:%-7s\n",
-                     inlink->frame_count, av_ts2str(frame->pts), av_ts2timestr(frame->pts, &inlink->time_base));
+                     inlink->frame_count_out, av_ts2str(frame->pts), av_ts2timestr(frame->pts, &inlink->time_base));
             s->print(ctx, "%s=%s\n", s->key, e->value);
         }
         return ff_filter_frame(outlink, frame);
@@ -330,9 +330,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
     case METADATA_DELETE:
         if (!s->key) {
             av_dict_free(metadata);
-        } else if (e && e->value && s->value && s->compare(s, e->value, s->value)) {
-            av_dict_set(metadata, s->key, NULL, 0);
-        } else if (e && e->value) {
+        } else if (e && e->value && (!s->value || s->compare(s, e->value, s->value))) {
             av_dict_set(metadata, s->key, NULL, 0);
         }
         return ff_filter_frame(outlink, frame);
