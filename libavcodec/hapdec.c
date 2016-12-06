@@ -403,6 +403,21 @@ static av_cold int hap_init(AVCodecContext *avctx)
         ctx->tex_fun = ctx->dxtc.dxt5ys_block;
         avctx->pix_fmt = AV_PIX_FMT_RGB0;
         break;
+    case MKTAG('H','a','p','M'):
+        // Note: in-ffmpeg Hap Q Alpha decoding not implemented yet
+        // need to deploy the new multi-texture hap format for that
+        texture_name = "DXT5-YCoCg-scaled + RGTC1-Alpha";
+        ctx->tex_rat = 16; // ???
+        ctx->tex_fun = ctx->dxtc.dxt5ys_block; // ???
+        avctx->pix_fmt = AV_PIX_FMT_RGBA;
+        break;
+      case MKTAG('H','a','p','A'):
+        // Note: in-ffmpeg Hap Alpha-only decoding not implemented yet
+        texture_name = "RGTC1-Alpha";
+        ctx->tex_rat = 4; // ???
+        ctx->tex_fun = ctx->dxtc.rgtc1s_block; // or rgtc1u_block ???
+        avctx->pix_fmt = AV_PIX_FMT_YA8;
+        break;
     default:
         return AVERROR_DECODER_NOT_FOUND;
     }
