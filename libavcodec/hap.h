@@ -41,6 +41,8 @@ enum HapCompressor {
     HAP_COMP_NONE    = 0xA0,
     HAP_COMP_SNAPPY  = 0xB0,
     HAP_COMP_COMPLEX = 0xC0,
+    HAP_COMP_LZ4     = 0xD0,
+    HAP_COMP_LZ4FAST = 0xE0,
 };
 
 enum HapSectionType {
@@ -78,7 +80,7 @@ typedef struct HapContext {
     uint8_t *tex_buf;        /* Buffer for compressed texture */
     size_t tex_size;         /* Size of the compressed texture */
 
-    size_t max_snappy;       /* Maximum compressed size for snappy buffer */
+    size_t max_compressed;       /* Maximum compressed size for snappy buffer */
 
     int slice_count;         /* Number of slices for threaded operations */
 
