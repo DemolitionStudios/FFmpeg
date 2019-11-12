@@ -97,8 +97,8 @@ static int read_number(const AVOption *o, const void *dst, double *num, int *den
 static int write_number(void *obj, const AVOption *o, void *dst, double num, int den, int64_t intnum)
 {
     if (o->type != AV_OPT_TYPE_FLAGS &&
-        (o->max * den < num * intnum || o->min * den > num * intnum)) {
-        num = den ? num * intnum / den : (num * intnum ? INFINITY : NAN);
+        (!den || o->max * den < num * intnum || o->min * den > num * intnum)) {
+        num = den ? num * intnum / den : (num && intnum ? INFINITY : NAN);
         av_log(obj, AV_LOG_ERROR, "Value %f for parameter '%s' out of range [%g - %g]\n",
                num, o->name, o->min, o->max);
         return AVERROR(ERANGE);
@@ -311,8 +311,6 @@ static int set_string_number(void *obj, void *target_obj, const AVOption *o, con
         if (!i || !*val)
             return 0;
     }
-
-    return 0;
 }
 
 static int set_string_image_size(void *obj, const AVOption *o, const char *val, int *dst)
@@ -465,6 +463,9 @@ int av_opt_set(void *obj, const char *name, const char *val, int search_flags)
     if (o->flags & AV_OPT_FLAG_READONLY)
         return AVERROR(EINVAL);
 
+    if (o->flags & AV_OPT_FLAG_DEPRECATED)
+        av_log(obj, AV_LOG_WARNING, "The \"%s\" option is deprecated: %s\n", name, o->help);
+
     dst = ((uint8_t *)target_obj) + o->offset;
     switch (o->type) {
     case AV_OPT_TYPE_BOOL:
@@ -495,15 +496,22 @@ int av_opt_set(void *obj, const char *name, const char *val, int search_flags)
     case AV_OPT_TYPE_SAMPLE_FMT:
         return set_string_sample_fmt(obj, o, val, dst);
     case AV_OPT_TYPE_DURATION:
-        if (!val) {
-            *(int64_t *)dst = 0;
+        {
+            int64_t usecs = 0;
+            if (val) {
+                if ((ret = av_parse_time(&usecs, val, 1)) < 0) {
+                    av_log(obj, AV_LOG_ERROR, "Unable to parse option value \"%s\" as duration\n", val);
+                    return ret;
+                }
+            }
+            if (usecs < o->min || usecs > o->max) {
+                av_log(obj, AV_LOG_ERROR, "Value %f for parameter '%s' out of range [%g - %g]\n",
+                       usecs / 1000000.0, o->name, o->min / 1000000.0, o->max / 1000000.0);
+                return AVERROR(ERANGE);
+            }
+            *(int64_t *)dst = usecs;
             return 0;
-        } else {
-            if ((ret = av_parse_time(dst, val, 1)) < 0)
-                av_log(obj, AV_LOG_ERROR, "Unable to parse option value \"%s\" as duration\n", val);
-            return ret;
         }
-        break;
     case AV_OPT_TYPE_COLOR:
         return set_string_color(obj, o, val, dst);
     case AV_OPT_TYPE_CHANNEL_LAYOUT:
@@ -760,6 +768,9 @@ int av_opt_get(void *obj, const char *name, int search_flags, uint8_t **out_val)
 
     if (!o || !target_obj || (o->offset<=0 && o->type != AV_OPT_TYPE_CONST))
         return AVERROR_OPTION_NOT_FOUND;
+
+    if (o->flags & AV_OPT_FLAG_DEPRECATED)
+        av_log(obj, AV_LOG_WARNING, "The \"%s\" option is deprecated: %s\n", name, o->help);
 
     dst = (uint8_t *)target_obj + o->offset;
 
@@ -1023,6 +1034,23 @@ int av_opt_flag_is_set(void *obj, const char *field_name, const char *flag_name)
     return res & flag->default_val.i64;
 }
 
+static void log_int_value(void *av_log_obj, int level, int64_t i)
+{
+    if (i == INT_MAX) {
+        av_log(av_log_obj, level, "INT_MAX");
+    } else if (i == INT_MIN) {
+        av_log(av_log_obj, level, "INT_MIN");
+    } else if (i == UINT32_MAX) {
+        av_log(av_log_obj, level, "UINT32_MAX");
+    } else if (i == INT64_MAX) {
+        av_log(av_log_obj, level, "I64_MAX");
+    } else if (i == INT64_MIN) {
+        av_log(av_log_obj, level, "I64_MIN");
+    } else {
+        av_log(av_log_obj, level, "%"PRId64, i);
+    }
+}
+
 static void log_value(void *av_log_obj, int level, double d)
 {
     if      (d == INT_MAX) {
@@ -1091,7 +1119,7 @@ static char *get_opt_flags_string(void *obj, const char *unit, int64_t value)
 }
 
 static void opt_list(void *obj, void *av_log_obj, const char *unit,
-                     int req_flags, int rej_flags)
+                     int req_flags, int rej_flags, enum AVOptionType parent_type)
 {
     const AVOption *opt = NULL;
     AVOptionRanges *r;
@@ -1171,6 +1199,11 @@ static void opt_list(void *obj, void *av_log_obj, const char *unit,
                 av_log(av_log_obj, AV_LOG_INFO, "%-12s ", "<boolean>");
                 break;
             case AV_OPT_TYPE_CONST:
+                if (parent_type == AV_OPT_TYPE_INT)
+                    av_log(av_log_obj, AV_LOG_INFO, "%-12"PRId64" ", opt->default_val.i64);
+                else
+                    av_log(av_log_obj, AV_LOG_INFO, "%-12s ", "");
+                break;
             default:
                 av_log(av_log_obj, AV_LOG_INFO, "%-12s ", "");
                 break;
@@ -1183,6 +1216,8 @@ static void opt_list(void *obj, void *av_log_obj, const char *unit,
         av_log(av_log_obj, AV_LOG_INFO, "%c", (opt->flags & AV_OPT_FLAG_SUBTITLE_PARAM) ? 'S' : '.');
         av_log(av_log_obj, AV_LOG_INFO, "%c", (opt->flags & AV_OPT_FLAG_EXPORT)         ? 'X' : '.');
         av_log(av_log_obj, AV_LOG_INFO, "%c", (opt->flags & AV_OPT_FLAG_READONLY)       ? 'R' : '.');
+        av_log(av_log_obj, AV_LOG_INFO, "%c", (opt->flags & AV_OPT_FLAG_BSF_PARAM)      ? 'B' : '.');
+        av_log(av_log_obj, AV_LOG_INFO, "%c", (opt->flags & AV_OPT_FLAG_RUNTIME_PARAM)  ? 'T' : '.');
 
         if (opt->help)
             av_log(av_log_obj, AV_LOG_INFO, " %s", opt->help);
@@ -1242,7 +1277,7 @@ static void opt_list(void *obj, void *av_log_obj, const char *unit,
                 if (def_const)
                     av_log(av_log_obj, AV_LOG_INFO, "%s", def_const);
                 else
-                    log_value(av_log_obj, AV_LOG_INFO, opt->default_val.i64);
+                    log_int_value(av_log_obj, AV_LOG_INFO, opt->default_val.i64);
                 break;
             }
             case AV_OPT_TYPE_DOUBLE:
@@ -1274,7 +1309,7 @@ static void opt_list(void *obj, void *av_log_obj, const char *unit,
 
         av_log(av_log_obj, AV_LOG_INFO, "\n");
         if (opt->unit && opt->type != AV_OPT_TYPE_CONST)
-            opt_list(obj, av_log_obj, opt->unit, req_flags, rej_flags);
+            opt_list(obj, av_log_obj, opt->unit, req_flags, rej_flags, opt->type);
     }
 }
 
@@ -1285,7 +1320,7 @@ int av_opt_show2(void *obj, void *av_log_obj, int req_flags, int rej_flags)
 
     av_log(av_log_obj, AV_LOG_INFO, "%s AVOptions:\n", (*(AVClass **)obj)->class_name);
 
-    opt_list(obj, av_log_obj, NULL, req_flags, rej_flags);
+    opt_list(obj, av_log_obj, NULL, req_flags, rej_flags, -1);
 
     return 0;
 }

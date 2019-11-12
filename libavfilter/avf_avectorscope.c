@@ -28,6 +28,7 @@
 #include "libavutil/opt.h"
 #include "libavutil/parseutils.h"
 #include "avfilter.h"
+#include "filters.h"
 #include "formats.h"
 #include "audio.h"
 #include "video.h"
@@ -65,8 +66,11 @@ typedef struct AudioVectorScopeContext {
     int contrast[4];
     int fade[4];
     double zoom;
+    int swap;
+    int mirror;
     unsigned prev_x, prev_y;
     AVRational frame_rate;
+    int nb_samples;
 } AudioVectorScopeContext;
 
 #define OFFSET(x) offsetof(AudioVectorScopeContext, x)
@@ -90,7 +94,7 @@ static const AVOption avectorscope_options[] = {
     { "gf", "set green fade",     OFFSET(fade[1]), AV_OPT_TYPE_INT, {.i64=10}, 0, 255, FLAGS },
     { "bf", "set blue fade",      OFFSET(fade[2]), AV_OPT_TYPE_INT, {.i64=5},  0, 255, FLAGS },
     { "af", "set alpha fade",     OFFSET(fade[3]), AV_OPT_TYPE_INT, {.i64=5},  0, 255, FLAGS },
-    { "zoom", "set zoom factor",  OFFSET(zoom), AV_OPT_TYPE_DOUBLE, {.dbl=1},  1, 10, FLAGS },
+    { "zoom", "set zoom factor",  OFFSET(zoom), AV_OPT_TYPE_DOUBLE, {.dbl=1},  0, 10, FLAGS },
     { "draw", "set draw mode", OFFSET(draw), AV_OPT_TYPE_INT, {.i64=DOT}, 0, DRAW_NB-1, FLAGS, "draw" },
     { "dot",   "", 0, AV_OPT_TYPE_CONST, {.i64=DOT} , 0, 0, FLAGS, "draw" },
     { "line",  "", 0, AV_OPT_TYPE_CONST, {.i64=LINE}, 0, 0, FLAGS, "draw" },
@@ -99,6 +103,12 @@ static const AVOption avectorscope_options[] = {
     { "sqrt",  "square root", 0, AV_OPT_TYPE_CONST, {.i64=SQRT}, 0, 0, FLAGS, "scale" },
     { "cbrt",  "cube root",   0, AV_OPT_TYPE_CONST, {.i64=CBRT}, 0, 0, FLAGS, "scale" },
     { "log",   "logarithmic", 0, AV_OPT_TYPE_CONST, {.i64=LOG},  0, 0, FLAGS, "scale" },
+    { "swap", "swap x axis with y axis", OFFSET(swap), AV_OPT_TYPE_BOOL, {.i64=1}, 0, 1, FLAGS },
+    { "mirror", "mirror axis", OFFSET(mirror), AV_OPT_TYPE_INT, {.i64=0}, 0, 3, FLAGS, "mirror" },
+    { "none",  "no mirror", 0, AV_OPT_TYPE_CONST, {.i64=0}, 0, 0, FLAGS, "mirror" },
+    { "x",  "mirror x",     0, AV_OPT_TYPE_CONST, {.i64=1}, 0, 0, FLAGS, "mirror" },
+    { "y",  "mirror y",     0, AV_OPT_TYPE_CONST, {.i64=2}, 0, 0, FLAGS, "mirror" },
+    { "xy", "mirror both",  0, AV_OPT_TYPE_CONST, {.i64=3}, 0, 0, FLAGS, "mirror" },
     { NULL }
 };
 
@@ -200,12 +210,8 @@ static int config_input(AVFilterLink *inlink)
 {
     AVFilterContext *ctx = inlink->dst;
     AudioVectorScopeContext *s = ctx->priv;
-    int nb_samples;
 
-    nb_samples = FFMAX(1024, ((double)inlink->sample_rate / av_q2d(s->frame_rate)) + 0.5);
-    inlink->partial_buf_size =
-    inlink->min_samples =
-    inlink->max_samples = nb_samples;
+    s->nb_samples = FFMAX(1, av_rescale(inlink->sample_rate, s->frame_rate.den, s->frame_rate.num));
 
     return 0;
 }
@@ -234,7 +240,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *insamples)
     const int hh = s->hh;
     unsigned x, y;
     unsigned prev_x = s->prev_x, prev_y = s->prev_y;
-    const double zoom = s->zoom;
+    double zoom = s->zoom;
     int i;
 
     if (!s->outpicref || s->outpicref->width  != outlink->w ||
@@ -246,12 +252,42 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *insamples)
             return AVERROR(ENOMEM);
         }
 
+        s->outpicref->sample_aspect_ratio = (AVRational){1,1};
         for (i = 0; i < outlink->h; i++)
             memset(s->outpicref->data[0] + i * s->outpicref->linesize[0], 0, outlink->w * 4);
     }
     s->outpicref->pts = insamples->pts;
 
     fade(s);
+
+    if (zoom < 1) {
+        float max = 0;
+
+        switch (insamples->format) {
+        case AV_SAMPLE_FMT_S16: {
+            int16_t *samples = (int16_t *)insamples->data[0];
+
+            for (i = 0; i < insamples->nb_samples * 2; i++) {
+                float sample = samples[i] / (float)INT16_MAX;
+                max = FFMAX(FFABS(sample), max);
+            }
+
+            }
+            break;
+        case AV_SAMPLE_FMT_FLT: {
+            float *samples = (float *)insamples->data[0];
+
+            for (i = 0; i < insamples->nb_samples * 2; i++) {
+                max = FFMAX(FFABS(samples[i]), max);
+            }
+            }
+            break;
+        default:
+            av_assert2(0);
+        }
+
+        zoom = 1. / max;
+    }
 
     for (i = 0; i < insamples->nb_samples; i++) {
         int16_t *samples = (int16_t *)insamples->data[0] + i * 2;
@@ -267,6 +303,8 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *insamples)
             src[0] = samplesf[0];
             src[1] = samplesf[1];
             break;
+        default:
+            av_assert2(0);
         }
 
         switch (s->scale) {
@@ -283,6 +321,15 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *insamples)
             src[1] = FFSIGN(src[1]) * logf(1 + FFABS(src[1])) / logf(2);
             break;
         }
+
+        if (s->mirror & 1)
+            src[0] = -src[0];
+
+        if (s->mirror & 2)
+            src[1] = -src[1];
+
+        if (s->swap)
+            FFSWAP(float, src[0], src[1]);
 
         if (s->mode == LISSAJOUS) {
             x = ((src[1] - src[0]) * zoom / 2 + 1) * hw;
@@ -316,6 +363,28 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *insamples)
     return ff_filter_frame(outlink, av_frame_clone(s->outpicref));
 }
 
+static int activate(AVFilterContext *ctx)
+{
+    AVFilterLink *inlink = ctx->inputs[0];
+    AVFilterLink *outlink = ctx->outputs[0];
+    AudioVectorScopeContext *s = ctx->priv;
+    AVFrame *in;
+    int ret;
+
+    FF_FILTER_FORWARD_STATUS_BACK(outlink, inlink);
+
+    ret = ff_inlink_consume_samples(inlink, s->nb_samples, s->nb_samples, &in);
+    if (ret < 0)
+        return ret;
+    if (ret > 0)
+        return filter_frame(inlink, in);
+
+    FF_FILTER_FORWARD_STATUS(inlink, outlink);
+    FF_FILTER_FORWARD_WANTED(outlink, inlink);
+
+    return FFERROR_NOT_READY;
+}
+
 static av_cold void uninit(AVFilterContext *ctx)
 {
     AudioVectorScopeContext *s = ctx->priv;
@@ -328,7 +397,6 @@ static const AVFilterPad audiovectorscope_inputs[] = {
         .name         = "default",
         .type         = AVMEDIA_TYPE_AUDIO,
         .config_props = config_input,
-        .filter_frame = filter_frame,
     },
     { NULL }
 };
@@ -348,6 +416,7 @@ AVFilter ff_avf_avectorscope = {
     .uninit        = uninit,
     .query_formats = query_formats,
     .priv_size     = sizeof(AudioVectorScopeContext),
+    .activate      = activate,
     .inputs        = audiovectorscope_inputs,
     .outputs       = audiovectorscope_outputs,
     .priv_class    = &avectorscope_class,

@@ -55,7 +55,7 @@ typedef struct Rl2DemuxContext {
  * @param p probe buffer
  * @return 0 when the probe buffer does not contain rl2 data, > 0 otherwise
  */
-static int rl2_probe(AVProbeData *p)
+static int rl2_probe(const AVProbeData *p)
 {
 
     if(AV_RB32(&p->buf[0]) != FORM_TAG)
@@ -170,12 +170,27 @@ static av_cold int rl2_read_header(AVFormatContext *s)
     }
 
     /** read offset and size tables */
-    for(i=0; i < frame_count;i++)
+    for(i=0; i < frame_count;i++) {
+        if (avio_feof(pb)) {
+            ret = AVERROR_INVALIDDATA;
+            goto end;
+        }
         chunk_size[i] = avio_rl32(pb);
-    for(i=0; i < frame_count;i++)
+    }
+    for(i=0; i < frame_count;i++) {
+        if (avio_feof(pb)) {
+            ret = AVERROR_INVALIDDATA;
+            goto end;
+        }
         chunk_offset[i] = avio_rl32(pb);
-    for(i=0; i < frame_count;i++)
+    }
+    for(i=0; i < frame_count;i++) {
+        if (avio_feof(pb)) {
+            ret = AVERROR_INVALIDDATA;
+            goto end;
+        }
         audio_size[i] = avio_rl32(pb) & 0xFFFF;
+    }
 
     /** build the sample index */
     for(i=0;i<frame_count;i++){
@@ -194,7 +209,7 @@ static av_cold int rl2_read_header(AVFormatContext *s)
         ++video_frame_counter;
     }
 
-
+end:
     av_free(chunk_size);
     av_free(audio_size);
     av_free(chunk_offset);

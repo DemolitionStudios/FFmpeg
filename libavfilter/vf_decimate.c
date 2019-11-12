@@ -34,7 +34,7 @@ struct qitem {
     int64_t totdiff;
 };
 
-typedef struct {
+typedef struct DecimateContext {
     const AVClass *class;
     struct qitem *queue;    ///< window of cycle frames and the associated data diff
     int fid;                ///< current frame id in the queue
@@ -217,11 +217,13 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
             av_frame_free(&dm->queue[i].frame);
         } else {
             AVFrame *frame = dm->queue[i].frame;
+            dm->queue[i].frame = NULL;
             if (frame->pts != AV_NOPTS_VALUE && dm->start_pts == AV_NOPTS_VALUE)
                 dm->start_pts = frame->pts;
             if (dm->ppsrc) {
                 av_frame_free(&frame);
                 frame = dm->clean_src[i];
+                dm->clean_src[i] = NULL;
             }
             frame->pts = av_rescale_q(outlink->frame_count_in, dm->ts_unit, (AVRational){1,1}) +
                          (dm->start_pts == AV_NOPTS_VALUE ? 0 : dm->start_pts);
@@ -276,17 +278,24 @@ static av_cold int decimate_init(AVFilterContext *ctx)
         .filter_frame = filter_frame,
         .config_props = config_input,
     };
+    int ret;
 
     if (!pad.name)
         return AVERROR(ENOMEM);
-    ff_insert_inpad(ctx, INPUT_MAIN, &pad);
+    if ((ret = ff_insert_inpad(ctx, INPUT_MAIN, &pad)) < 0) {
+        av_freep(&pad.name);
+        return ret;
+    }
 
     if (dm->ppsrc) {
         pad.name = av_strdup("clean_src");
         pad.config_props = NULL;
         if (!pad.name)
             return AVERROR(ENOMEM);
-        ff_insert_inpad(ctx, INPUT_CLEANSRC, &pad);
+        if ((ret = ff_insert_inpad(ctx, INPUT_CLEANSRC, &pad)) < 0) {
+            av_freep(&pad.name);
+            return ret;
+        }
     }
 
     if ((dm->blockx & (dm->blockx - 1)) ||
@@ -307,7 +316,15 @@ static av_cold void decimate_uninit(AVFilterContext *ctx)
 
     av_frame_free(&dm->last);
     av_freep(&dm->bdiffs);
+    if (dm->queue) {
+        for (i = 0; i < dm->cycle; i++)
+            av_frame_free(&dm->queue[i].frame);
+    }
     av_freep(&dm->queue);
+    if (dm->clean_src) {
+        for (i = 0; i < dm->cycle; i++)
+            av_frame_free(&dm->clean_src[i]);
+    }
     av_freep(&dm->clean_src);
     for (i = 0; i < ctx->nb_inputs; i++)
         av_freep(&ctx->input_pads[i].name);

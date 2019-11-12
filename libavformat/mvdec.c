@@ -46,7 +46,7 @@ typedef struct MvContext {
 
 #define AUDIO_FORMAT_SIGNED 401
 
-static int mv_probe(AVProbeData *p)
+static int mv_probe(const AVProbeData *p)
 {
     if (AV_RB32(p->buf) == MKBETAG('M', 'O', 'V', 'I') &&
         AV_RB16(p->buf + 4) < 3)
@@ -211,6 +211,8 @@ static int parse_video_var(AVFormatContext *avctx, AVStream *st,
     } else if (!strcmp(name, "ORIENTATION")) {
         if (var_read_int(pb, size) == 1101) {
             st->codecpar->extradata      = av_strdup("BottomUp");
+            if (!st->codecpar->extradata)
+                return AVERROR(ENOMEM);
             st->codecpar->extradata_size = 9;
         }
     } else if (!strcmp(name, "Q_SPATIAL") || !strcmp(name, "Q_TEMPORAL")) {
@@ -227,7 +229,9 @@ static int read_table(AVFormatContext *avctx, AVStream *st,
                        int (*parse)(AVFormatContext *avctx, AVStream *st,
                                     const char *name, int size))
 {
-    int count, i;
+    unsigned count;
+    int i;
+
     AVIOContext *pb = avctx->pb;
     avio_skip(pb, 4);
     count = avio_rb32(pb);
@@ -235,6 +239,10 @@ static int read_table(AVFormatContext *avctx, AVStream *st,
     for (i = 0; i < count; i++) {
         char name[17];
         int size;
+
+        if (avio_feof(pb))
+            return AVERROR_EOF;
+
         avio_read(pb, name, 16);
         name[sizeof(name) - 1] = 0;
         size = avio_rb32(pb);
@@ -342,6 +350,8 @@ static int mv_read_header(AVFormatContext *avctx)
             uint32_t pos   = avio_rb32(pb);
             uint32_t asize = avio_rb32(pb);
             uint32_t vsize = avio_rb32(pb);
+            if (avio_feof(pb))
+                return AVERROR_INVALIDDATA;
             avio_skip(pb, 8);
             av_add_index_entry(ast, pos, timestamp, asize, 0, AVINDEX_KEYFRAME);
             av_add_index_entry(vst, pos + asize, i, vsize, 0, AVINDEX_KEYFRAME);
@@ -421,7 +431,7 @@ static int mv_read_packet(AVFormatContext *avctx, AVPacket *pkt)
         if (index->pos > pos)
             avio_skip(pb, index->pos - pos);
         else if (index->pos < pos) {
-            if (!pb->seekable)
+            if (!(pb->seekable & AVIO_SEEKABLE_NORMAL))
                 return AVERROR(EIO);
             ret = avio_seek(pb, index->pos, SEEK_SET);
             if (ret < 0)
@@ -463,7 +473,7 @@ static int mv_read_seek(AVFormatContext *avctx, int stream_index,
     if ((flags & AVSEEK_FLAG_FRAME) || (flags & AVSEEK_FLAG_BYTE))
         return AVERROR(ENOSYS);
 
-    if (!avctx->pb->seekable)
+    if (!(avctx->pb->seekable & AVIO_SEEKABLE_NORMAL))
         return AVERROR(EIO);
 
     frame = av_index_search_timestamp(st, timestamp, flags);

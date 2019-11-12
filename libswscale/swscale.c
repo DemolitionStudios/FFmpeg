@@ -74,8 +74,11 @@ static void hScale16To19_c(SwsContext *c, int16_t *_dst, int dstW,
     int bits            = desc->comp[0].depth - 1;
     int sh              = bits - 4;
 
-    if((isAnyRGB(c->srcFormat) || c->srcFormat==AV_PIX_FMT_PAL8) && desc->comp[0].depth<16)
-        sh= 9;
+    if ((isAnyRGB(c->srcFormat) || c->srcFormat==AV_PIX_FMT_PAL8) && desc->comp[0].depth<16) {
+        sh = 9;
+    } else if (desc->flags & AV_PIX_FMT_FLAG_FLOAT) { /* float input are process like uint 16bpc */
+        sh = 16 - 1 - 4;
+    }
 
     for (i = 0; i < dstW; i++) {
         int j;
@@ -99,8 +102,11 @@ static void hScale16To15_c(SwsContext *c, int16_t *dst, int dstW,
     const uint16_t *src = (const uint16_t *) _src;
     int sh              = desc->comp[0].depth - 1;
 
-    if(sh<15)
-        sh= isAnyRGB(c->srcFormat) || c->srcFormat==AV_PIX_FMT_PAL8 ? 13 : (desc->comp[0].depth - 1);
+    if (sh<15) {
+        sh = isAnyRGB(c->srcFormat) || c->srcFormat==AV_PIX_FMT_PAL8 ? 13 : (desc->comp[0].depth - 1);
+    } else if (desc->flags & AV_PIX_FMT_FLAG_FLOAT) { /* float input are process like uint 16bpc */
+        sh = 16 - 1;
+    }
 
     for (i = 0; i < dstW; i++) {
         int j;
@@ -265,7 +271,6 @@ static int swscale(SwsContext *c, const uint8_t *src[],
     int lastInLumBuf = c->lastInLumBuf;
     int lastInChrBuf = c->lastInChrBuf;
 
-
     int lumStart = 0;
     int lumEnd = c->descIndex[0];
     int chrStart = lumEnd;
@@ -277,19 +282,15 @@ static int swscale(SwsContext *c, const uint8_t *src[],
     SwsSlice *vout_slice = &c->slice[c->numSlice-1];
     SwsFilterDescriptor *desc = c->desc;
 
-
     int needAlpha = c->needAlpha;
 
     int hasLumHoles = 1;
     int hasChrHoles = 1;
 
-
     if (isPacked(c->srcFormat)) {
-        src[0] =
         src[1] =
         src[2] =
         src[3] = src[0];
-        srcStride[0] =
         srcStride[1] =
         srcStride[2] =
         srcStride[3] = srcStride[0];
@@ -326,7 +327,7 @@ static int swscale(SwsContext *c, const uint8_t *src[],
         static int warnedAlready=0;
         int cpu_flags = av_get_cpu_flags();
         if (HAVE_MMXEXT && (cpu_flags & AV_CPU_FLAG_SSE2) && !warnedAlready){
-            av_log(c, AV_LOG_WARNING, "Warning: data is not aligned! This can lead to a speedloss\n");
+            av_log(c, AV_LOG_WARNING, "Warning: data is not aligned! This can lead to a speed loss\n");
             warnedAlready=1;
         }
     }
@@ -566,7 +567,6 @@ static av_cold void sws_init_swscale(SwsContext *c)
 
     ff_sws_init_input_funcs(c);
 
-
     if (c->srcBpc == 8) {
         if (c->dstBpc <= 14) {
             c->hyScale = c->hcScale = hScale8To15_c;
@@ -762,15 +762,18 @@ int attribute_align_arg sws_scale(struct SwsContext *c,
     uint8_t *rgb0_tmp = NULL;
     int macro_height = isBayer(c->srcFormat) ? 2 : (1 << c->chrSrcVSubSample);
     // copy strides, so they can safely be modified
-    int srcStride2[4] = { srcStride[0], srcStride[1], srcStride[2],
-                            srcStride[3] };
-    int dstStride2[4] = { dstStride[0], dstStride[1], dstStride[2],
-                            dstStride[3] };
+    int srcStride2[4];
+    int dstStride2[4];
     int srcSliceY_internal = srcSliceY;
 
     if (!srcStride || !dstStride || !dst || !srcSlice) {
         av_log(c, AV_LOG_ERROR, "One of the input parameters to sws_scale() is NULL, please check the calling code\n");
         return 0;
+    }
+
+    for (i=0; i<4; i++) {
+        srcStride2[i] = srcStride[i];
+        dstStride2[i] = dstStride[i];
     }
 
     if ((srcSliceY & (macro_height-1)) ||
@@ -781,8 +784,6 @@ int attribute_align_arg sws_scale(struct SwsContext *c,
     }
 
     if (c->gamma_flag && c->cascaded_context[0]) {
-
-
         ret = sws_scale(c->cascaded_context[0],
                     srcSlice, srcStride, srcSliceY, srcSliceH,
                     c->cascaded_tmp, c->cascaded_tmpStride);
@@ -975,7 +976,6 @@ int attribute_align_arg sws_scale(struct SwsContext *c,
     if (srcSliceY_internal + srcSliceH == c->srcH)
         c->sliceDir = 0;
     ret = c->swscale(c, src2, srcStride2, srcSliceY_internal, srcSliceH, dst2, dstStride2);
-
 
     if (c->dstXYZ && !(c->srcXYZ && c->srcW==c->dstW && c->srcH==c->dstH)) {
         int dstY = c->dstY ? c->dstY : srcSliceY + srcSliceH;
