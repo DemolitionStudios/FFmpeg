@@ -1,16 +1,27 @@
+# Install & run MSYS2
+# Install cmp needed by configure script
+#	pacman -Suy
+#	pacman -S base-devel --needed 
+
 # cd /c/Users/lev/projects/UnityHapPlugin/hapunityplugin/3rdparty/ffmpeg
+#	 /d/projects/DemolitionStudios/hapunityplugin/3rdparty/ffmpeg
+
+# Add nasm.exe to PATH
+#	export PATH="/h/media-autobuild_suite/msys64/mingw64/bin/":$PATH
+#	or install nasm from https://www.nasm.us/pub/nasm/releasebuilds/?C=M;O=D and 
+#		export PATH="/c/Program Files/NASM":$PATH
+
 # ./make-vs2015-x86_64-env.bat
 # <execute each export command>
-# export PATH="/h/media-autobuild_suite/msys64/mingw64/bin/":$PATH
+
 # bash ./configure_win_x86_64_msvc.sh
 # time make -j9 && make install
 
 
+#REPO_ROOT=/c/Users/lev/projects/UnityHapPlugin/hapunityplugin
+REPO_ROOT=/d/projects/DemolitionStudios/hapunityplugin
 
-# --enable-avdevice 
-# --enable-filter=scale
-
-./configure     --prefix=builds/win_x86_64_msvc \
+./configure   --prefix=builds/win_x86_64_msvc \
 		--enable-shared --disable-static \
 		--enable-asm --enable-x86asm \
 		--arch=x86_64 --target-os=win64 --toolchain=msvc \
@@ -18,15 +29,16 @@
 		--disable-parsers --disable-bsfs --disable-protocols --disable-indevs --disable-outdevs \
 		--disable-devices --disable-ffprobe \
 		--enable-avcodec --enable-avformat --enable-swresample --enable-swscale --enable-avfilter \
-		--enable-protocol=file --enable-demuxer=mov,avi --enable-muxer=mov,avi \
+		--enable-protocol=file --enable-demuxer=mov,avi,h264 --enable-muxer=mov,avi,h264 \
 		--enable-filters \
-		--enable-libsnappy --enable-liblz4 \
+		--enable-parser=h264 --enable-decoder=h264 --enable-decoder=rawvideo  \
+		--enable-libsnappy --enable-liblz4 --enable-liblizard --enable-libzstd \
 		--enable-decoder=hap --enable-encoder=hap \
-		--extra-cflags="-I /c/Users/lev/projects/UnityHapPlugin/hapunityplugin/3rdparty/snappy-windows-1.1.1.8/include/" \
-		--extra-ldflags="-LIBPATH:/c/Users/lev/projects/UnityHapPlugin/hapunityplugin/3rdparty/snappy-windows-1.1.1.8/native/" \
-		--extra-cflags="-I /c/Users/lev/projects/UnityHapPlugin/hapunityplugin/3rdparty/lz4-windows/include/" \
-		--extra-ldflags="-LIBPATH:/c/Users/lev/projects/UnityHapPlugin/hapunityplugin/3rdparty/lz4-windows/lib/x64/" 
-
-#		--extra-cflags="-I/c/Users/lev/projects/UnityHapPlugin/hapunityplugin/3rdparty/snappy-windows-1.1.1.8/include/" 
-#		--extra-ldflags="-L/c/Users/lev/projects/UnityHapPlugin/hapunityplugin/3rdparty/snappy-windows-1.1.1.8/lib/"
-
+		--extra-cflags="-I ${REPO_ROOT}/3rdparty/snappy-windows-1.1.1.8/include/" \
+		--extra-ldflags="-LIBPATH:${REPO_ROOT}/3rdparty/snappy-windows-1.1.1.8/native/" \
+		--extra-cflags="-I ${REPO_ROOT}/3rdparty/lz4-windows/include/" \
+		--extra-ldflags="-LIBPATH:${REPO_ROOT}/3rdparty/lz4-windows/lib/x64/" \
+		--extra-cflags="-I ${REPO_ROOT}/3rdparty/lizard-windows/include/" \
+		--extra-ldflags="-LIBPATH:${REPO_ROOT}/3rdparty/lizard-windows/lib/x64/" \
+		--extra-cflags="-I ${REPO_ROOT}/3rdparty/zstd-windows/include/" \
+		--extra-ldflags="-LIBPATH:${REPO_ROOT}/3rdparty/zstd-windows/lib/x64/" 
