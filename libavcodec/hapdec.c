@@ -48,7 +48,7 @@ static int hap_parse_decode_instructions(HapContext *ctx, int size)
     GetByteContext *gbc = &ctx->gbc;
     int section_size;
     enum HapSectionType section_type;
-    int is_first_table = 1, had_offsets = 0, had_compressors = 0, had_sizes = 0;
+    int is_first_table = 1, had_offsets = 0, had_compressors = 0, had_sizes = 0, had_uncompressed_sizes = 0;
     int i, ret;
 
     while (size > 0) {
@@ -90,13 +90,23 @@ static int hap_parse_decode_instructions(HapContext *ctx, int size)
                 had_offsets = 1;
                 is_first_table = 0;
                 break;
+            case HAP_ST_UNCOMPRESSED_SIZE_TABLE:
+                ret = ff_hap_set_chunk_count(ctx, section_size / 4, is_first_table);
+                if (ret != 0)
+                    return ret;
+                for (i = 0; i < section_size / 4; i++) {
+                    ctx->chunks[i].uncompressed_size = bytestream2_get_le32(gbc);
+                }
+                had_uncompressed_sizes = 1;
+                is_first_table = 0;
+                break;
             default:
                 break;
         }
         size -= section_size;
     }
 
-    if (!had_sizes || !had_compressors)
+    if (!had_sizes || !had_compressors/* || !had_uncompressed_sizes*/)
         return AVERROR_INVALIDDATA;
 
     /* The offsets table is optional. If not present than calculate offsets by
