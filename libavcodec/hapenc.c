@@ -32,6 +32,8 @@
 #include <stdint.h>
 #include "snappy-c.h"
 #include "lz4.h"
+#include "lizard_compress.h"
+#include "zstd.h"
 
 #include "libavutil/frame.h"
 #include "libavutil/imgutils.h"
@@ -94,6 +96,7 @@ static int hap_compress_frame(AVCodecContext *avctx, uint8_t *dst)
 {
     HapContext *ctx = avctx->priv_data;
     int i, final_size = 0;
+	int level;
 
     for (i = 0; i < ctx->chunk_count; i++) {
         HapChunk *chunk = &ctx->chunks[i];
@@ -112,7 +115,7 @@ static int hap_compress_frame(AVCodecContext *avctx, uint8_t *dst)
         chunk_src = ctx->tex_buf + chunk->uncompressed_offset;
         chunk_dst = dst + chunk->compressed_offset;
 
-        /* Compress with snappy/lz4/lz4fast too, write directly on packet buffer. */
+        /* Compress with snappy/lz4/lizard/zstd too, write directly on packet buffer. */
         if (ctx->opt_compressor == HAP_COMP_SNAPPY) {
             ret = snappy_compress(chunk_src, chunk->uncompressed_size,
                                   chunk_dst, &chunk->compressed_size);
@@ -126,22 +129,57 @@ static int hap_compress_frame(AVCodecContext *avctx, uint8_t *dst)
                                        chunk->uncompressed_size,
                                        chunk->compressed_size);
             if (ret == 0) {
-                av_log(avctx, AV_LOG_ERROR, "LZ4 compress error.\n");
+                av_log(avctx, AV_LOG_ERROR, "lz4 compress error.\n");
                 return AVERROR_BUG;
             }
             chunk->compressed_size = ret;
         }
-        else if (ctx->opt_compressor == HAP_COMP_LZ4FAST) {
-            ret = LZ4_compress_fast(chunk_src, chunk_dst,
+        else if (ctx->opt_compressor == HAP_COMP_LZ4FAST3 || ctx->opt_compressor == HAP_COMP_LZ4FAST17) {
+			level = ctx->opt_compressor == HAP_COMP_LZ4FAST3 ? 3 : 17;
+			ret = LZ4_compress_fast(chunk_src, chunk_dst,
                                     chunk->uncompressed_size,
                                     chunk->compressed_size,
-                                    3 /* level */);
+                                    level);
             if (ret == 0) {
-                av_log(avctx, AV_LOG_ERROR, "LZ4fast compress error.\n");
+                av_log(avctx, AV_LOG_ERROR, "lz4fast compress error.\n");
                 return AVERROR_BUG;
             }
             chunk->compressed_size = ret;
         }
+		else if (ctx->opt_compressor == HAP_COMP_LZ4HC4) {
+			// TODO: add levels 1, 9
+			ret = LZ4_compress_HC(chunk_src, chunk_dst,
+								  chunk->uncompressed_size,
+								  chunk->compressed_size,
+								  4 /* level */);
+			if (ret == 0) {
+				av_log(avctx, AV_LOG_ERROR, "lz4hc compress error.\n");
+				return AVERROR_BUG;
+			}
+			chunk->compressed_size = ret;
+		}
+		else if (ctx->opt_compressor == HAP_COMP_LIZARD10 || ctx->opt_compressor == HAP_COMP_LIZARD12) {
+			level = ctx->opt_compressor == HAP_COMP_LIZARD10 ? 10 : 12;
+			ret = Lizard_compress(chunk_src, chunk_dst,
+							  	  chunk->uncompressed_size,
+								  chunk->compressed_size,
+								  level);
+			if (ret == 0) {
+				av_log(avctx, AV_LOG_ERROR, "Lizard compress error.\n");
+				return AVERROR_BUG;
+			}
+			chunk->compressed_size = ret;
+		}
+		else if (ctx->opt_compressor == HAP_COMP_ZSTD1) {
+			ret = ZSTD_compress(chunk_dst, chunk->compressed_size,
+								chunk_src, chunk->uncompressed_size,
+								1 /* fastest level */);
+			if (ZSTD_isError(ret)) {
+				av_log(avctx, AV_LOG_ERROR, "zstd compress error.\n");
+				return AVERROR_BUG;
+			}
+			chunk->compressed_size = ret;
+		}
 
         /* If there is no gain from compression, just use the raw texture. */
         if (chunk->compressed_size >= chunk->uncompressed_size) {
@@ -165,9 +203,10 @@ static int hap_decode_instructions_length(HapContext *ctx)
 {
     /*    Second-Stage Compressor Table (one byte per entry)
      *  + Chunk Size Table (four bytes per entry)
-     *  + headers for both sections (short versions)
-     *  = chunk_count + (4 * chunk_count) + 4 + 4 */
-    return (5 * ctx->chunk_count) + 8;
+	 *  + Chunk Uncompressed Size Table (four bytes per entry)
+     *  + headers for 3 sections (short versions)
+     *  = chunk_count + (4 * chunk_count) * 2 + 4 * 3 */
+    return (9 * ctx->chunk_count) + 12;
 }
 
 static int hap_header_length(HapContext *ctx)
@@ -197,8 +236,11 @@ static void hap_write_frame_header(HapContext *ctx, uint8_t *dst, int frame_leng
         /* Write a complex header with Decode Instructions Container */
         hap_write_section_header(&pbc, HAP_HDR_LONG, frame_length - 8,
                                  HAP_COMP_COMPLEX | ctx->opt_tex_fmt);
-        hap_write_section_header(&pbc, HAP_HDR_SHORT, hap_decode_instructions_length(ctx),
+        
+		hap_write_section_header(&pbc, HAP_HDR_SHORT, hap_decode_instructions_length(ctx),
                                  HAP_ST_DECODE_INSTRUCTIONS);
+
+		// Compressors
         hap_write_section_header(&pbc, HAP_HDR_SHORT, ctx->chunk_count,
                                  HAP_ST_COMPRESSOR_TABLE);
 
@@ -206,11 +248,20 @@ static void hap_write_frame_header(HapContext *ctx, uint8_t *dst, int frame_leng
             bytestream2_put_byte(&pbc, ctx->chunks[i].compressor >> 4);
         }
 
+		// Compressed chunk sizes
         hap_write_section_header(&pbc, HAP_HDR_SHORT, ctx->chunk_count * 4,
                                  HAP_ST_SIZE_TABLE);
 
         for (i = 0; i < ctx->chunk_count; i++) {
             bytestream2_put_le32(&pbc, ctx->chunks[i].compressed_size);
+        }
+
+		// Uncompressed chunk sizes
+		hap_write_section_header(&pbc, HAP_HDR_SHORT, ctx->chunk_count * 4,
+                                 HAP_ST_UNCOMPRESSED_SIZE_TABLE);
+        
+		for (i = 0; i < ctx->chunk_count; i++) {
+            bytestream2_put_le32(&pbc, ctx->chunks[i].uncompressed_size);
         }
     }
 }
@@ -242,7 +293,7 @@ static int hap_encode(AVCodecContext *avctx, AVPacket *pkt,
         if (ret < 0)
             return ret;
 
-        /* Compress (using Snappy/LZ4/LZ4fast) the frame */
+        /* Compress the frame (using Snappy/LZ4/Lizard/zstd) */
         final_data_size = hap_compress_frame(avctx, pkt->data + header_length);
         if (final_data_size < 0)
             return final_data_size;
@@ -317,7 +368,12 @@ static av_cold int hap_init(AVCodecContext *avctx)
         break;
     case HAP_COMP_SNAPPY:
     case HAP_COMP_LZ4:
-    case HAP_COMP_LZ4FAST:
+    case HAP_COMP_LZ4FAST3:
+	case HAP_COMP_LZ4FAST17:
+	case HAP_COMP_LZ4HC4:
+	case HAP_COMP_LIZARD10:
+	case HAP_COMP_LIZARD12:
+	case HAP_COMP_ZSTD1:
         /* Round the chunk count to divide evenly on DXT block edges */
         corrected_chunk_count = av_clip(ctx->opt_chunk_count, 1, HAP_MAX_CHUNKS);
         while ((ctx->tex_size / (64 / ratio)) % corrected_chunk_count != 0) {
@@ -327,9 +383,15 @@ static av_cold int hap_init(AVCodecContext *avctx)
         if (ctx->opt_compressor == HAP_COMP_SNAPPY) {
             ctx->max_compressed = snappy_max_compressed_length(ctx->tex_size / corrected_chunk_count);
         }
-        else if (ctx->opt_compressor == HAP_COMP_LZ4 || ctx->opt_compressor == HAP_COMP_LZ4FAST) {
+        else if (ctx->opt_compressor >= HAP_COMP_LZ4 && ctx->opt_compressor <= HAP_COMP_LZ4HC4) {
             ctx->max_compressed = LZ4_compressBound(ctx->tex_size / corrected_chunk_count);
         }
+		else if (ctx->opt_compressor == HAP_COMP_LIZARD10 || ctx->opt_compressor == HAP_COMP_LIZARD12) {
+			ctx->max_compressed = Lizard_compressBound(ctx->tex_size / corrected_chunk_count);
+		}
+		else if (ctx->opt_compressor == HAP_COMP_ZSTD1) {
+			ctx->max_compressed = ZSTD_compressBound(ctx->tex_size / corrected_chunk_count);
+		}
 
         ctx->tex_buf = av_malloc(ctx->tex_size);
         if (!ctx->tex_buf) {
@@ -368,12 +430,17 @@ static const AVOption options[] = {
         { "hap_alpha", "Hap Alpha (DXT5 textures)", 0, AV_OPT_TYPE_CONST, { .i64 = HAP_FMT_RGBADXT5  }, 0, 0, FLAGS, "format" },
         { "hap_q",     "Hap Q (DXT5-YCoCg textures)", 0, AV_OPT_TYPE_CONST, { .i64 = HAP_FMT_YCOCGDXT5 }, 0, 0, FLAGS, "format" },
     { "chunks", "chunk count", OFFSET(opt_chunk_count), AV_OPT_TYPE_INT, {.i64 = 1 }, 1, HAP_MAX_CHUNKS, FLAGS, },
-    { "compressor", "second-stage compressor", OFFSET(opt_compressor), AV_OPT_TYPE_INT, { .i64 = HAP_COMP_SNAPPY }, HAP_COMP_NONE, HAP_COMP_LZ4FAST, FLAGS, "compressor" },
+    { "compressor", "second-stage compressor", OFFSET(opt_compressor), AV_OPT_TYPE_INT, { .i64 = HAP_COMP_SNAPPY }, HAP_COMP_LZ4, HAP_COMP_COMPLEX, FLAGS, "compressor" },
         { "none",       "None", 0, AV_OPT_TYPE_CONST, { .i64 = HAP_COMP_NONE }, 0, 0, FLAGS, "compressor" },
         { "snappy",     "Snappy", 0, AV_OPT_TYPE_CONST, { .i64 = HAP_COMP_SNAPPY }, 0, 0, FLAGS, "compressor" },
-        { "lz4",        "LZ4", 0, AV_OPT_TYPE_CONST, {.i64 = HAP_COMP_LZ4 }, 0, 0, FLAGS, "compressor" },
-        { "lz4fast",    "LZ4fast", 0, AV_OPT_TYPE_CONST, {.i64 = HAP_COMP_LZ4FAST }, 0, 0, FLAGS, "compressor" },
-    { NULL },
+        { "lz4",        "lz4", 0, AV_OPT_TYPE_CONST, {.i64 = HAP_COMP_LZ4 }, 0, 0, FLAGS, "compressor" },
+        { "lz4fast3",    "lz4fast (level 3)", 0, AV_OPT_TYPE_CONST, {.i64 = HAP_COMP_LZ4FAST3 }, 0, 0, FLAGS, "compressor" },
+		{ "lz4fast17",    "lz4fast (level 17)", 0, AV_OPT_TYPE_CONST, {.i64 = HAP_COMP_LZ4FAST17 }, 0, 0, FLAGS, "compressor" },
+		{ "lz4hc4",    "lz4hc (level 4)", 0, AV_OPT_TYPE_CONST, {.i64 = HAP_COMP_LZ4HC4 }, 0, 0, FLAGS, "compressor" },
+		{ "lizard10",    "Lizard (level 10)", 0, AV_OPT_TYPE_CONST, {.i64 = HAP_COMP_LIZARD10 }, 0, 0, FLAGS, "compressor" },
+		{ "lizard12",    "Lizard (level 12)", 0, AV_OPT_TYPE_CONST, {.i64 = HAP_COMP_LIZARD12 }, 0, 0, FLAGS, "compressor" },
+		{ "zstd1",    "zstd (level 1)", 0, AV_OPT_TYPE_CONST, {.i64 = HAP_COMP_ZSTD1 }, 0, 0, FLAGS, "compressor" },
+{ NULL },
 };
 
 static const AVClass hapenc_class = {
