@@ -30,6 +30,7 @@
 #include "bytestream.h"
 #include "texturedsp.h"
 
+ // Bottom 4 bits
 enum HapTextureFormat {
     HAP_FMT_RGBDXT1   = 0x0B,
     HAP_FMT_RGBADXT5  = 0x0E,
@@ -37,19 +38,26 @@ enum HapTextureFormat {
     HAP_FMT_RGTC1     = 0x01,
 };
 
+// Top 4 bits
 enum HapCompressor {
-    HAP_COMP_NONE    = 0xA0,
-    HAP_COMP_SNAPPY  = 0xB0,
-    HAP_COMP_COMPLEX = 0xC0,
-    HAP_COMP_LZ4     = 0xD0,
-    HAP_COMP_LZ4FAST = 0xE0,
+    HAP_COMP_NONE		= 0xA0,
+    HAP_COMP_SNAPPY		= 0xB0,
+    HAP_COMP_COMPLEX	= 0xC0,
+    HAP_COMP_LZ4		= 0x10,
+    HAP_COMP_LZ4FAST3	= 0x20,
+    HAP_COMP_LZ4FAST17	= 0x30,
+    HAP_COMP_LZ4HC4		= 0x40, // TODO: add 9 and 1?
+    HAP_COMP_LIZARD10   = 0x50,
+    HAP_COMP_LIZARD12	= 0x60,
+    HAP_COMP_ZSTD1		= 0x70,
 };
 
 enum HapSectionType {
-    HAP_ST_DECODE_INSTRUCTIONS = 0x01,
-    HAP_ST_COMPRESSOR_TABLE    = 0x02,
-    HAP_ST_SIZE_TABLE          = 0x03,
-    HAP_ST_OFFSET_TABLE        = 0x04,
+    HAP_ST_DECODE_INSTRUCTIONS       = 0x01,
+    HAP_ST_COMPRESSOR_TABLE          = 0x02,
+    HAP_ST_SIZE_TABLE                = 0x03,
+    HAP_ST_OFFSET_TABLE              = 0x04,
+    HAP_ST_UNCOMPRESSED_SIZE_TABLE   = 0x05,
 };
 
 typedef struct HapChunk {

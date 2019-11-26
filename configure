@@ -262,6 +262,8 @@ External library support:
   --enable-libsmbclient    enable Samba protocol via libsmbclient [no]
   --enable-libsnappy       enable Snappy compression, needed for hap encoding [no]
   --enable-liblz4          enable LZ4 compression, needed for hap encoding [no]
+  --enable-liblizard       enable Lizard compression, needed for hap encoding [no]
+  --enable-libzstd		   enable zstd compression, needed for hap encoding [no]
   --enable-libsoxr         enable Include libsoxr resampling [no]
   --enable-libspeex        enable Speex de/encoding via libspeex [no]
   --enable-libsrt          enable Haivision SRT protocol via libsrt [no]
@@ -1793,6 +1795,8 @@ EXTERNAL_LIBRARY_LIST="
     libsmbclient
     libsnappy
 	liblz4
+	liblizard
+	libzstd
     libsoxr
     libspeex
     libsrt
@@ -2377,6 +2381,8 @@ CONFIG_EXTRA="
     llvidencdsp
     lpc
 	lz4
+	lizard
+	zstd
     lzf
     me_cmp
     mpeg_er
@@ -2724,8 +2730,8 @@ h263p_encoder_select="h263_encoder"
 h264_decoder_select="cabac golomb h264chroma h264dsp h264parse h264pred h264qpel videodsp"
 h264_decoder_suggest="error_resilience"
 hap_decoder_select="snappy texturedsp"
-hap_encoder_deps="libsnappy liblz4"
 hap_encoder_select="texturedspenc"
+hap_encoder_deps="libsnappy liblz4 liblizard libzstd"
 hevc_decoder_select="bswapdsp cabac golomb hevcparse videodsp"
 huffyuv_decoder_select="bswapdsp huffyuvdsp llviddsp"
 huffyuv_encoder_select="bswapdsp huffman huffyuvencdsp llvidencdsp"
@@ -6303,6 +6309,8 @@ enabled libsmbclient      && { check_pkg_config libsmbclient smbclient libsmbcli
                                require libsmbclient libsmbclient.h smbc_init -lsmbclient; }
 enabled libsnappy         && require libsnappy snappy-c.h snappy_compress -lsnappy64 -lstdc++
 enabled liblz4		      && require liblz4 lz4.h LZ4_compress_fast -lliblz4 -lstdc++
+enabled liblizard	      && require liblizard lizard_compress.h Lizard_compress -lliblizard -lstdc++
+enabled libzstd           && require libzstd zstd.h ZSTD_compress -llibzstd -lstdc++
 enabled libsoxr           && require libsoxr soxr.h soxr_create -lsoxr
 enabled libssh            && require_pkg_config libssh libssh libssh/sftp.h sftp_init
 enabled libspeex          && require_pkg_config libspeex speex speex/speex.h speex_decoder_init
