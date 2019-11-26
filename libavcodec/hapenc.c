@@ -253,6 +253,7 @@ static av_cold int hap_init(AVCodecContext *avctx)
     }
 
     ff_texturedspenc_init(&ctx->dxtc);
+    ff_bc7enc16_init(&ctx->bc7c, BC7ENC16_TRUE /* perceptual */, BC7ENC16_MAX_PARTITIONS1 /* max_partitions_to_scan */, 0 /* uber_level */);
 
     switch (ctx->opt_tex_fmt) {
     case HAP_FMT_RGBDXT1:
@@ -272,6 +273,12 @@ static av_cold int hap_init(AVCodecContext *avctx)
         avctx->codec_tag = MKTAG('H', 'a', 'p', 'Y');
         avctx->bits_per_coded_sample = 24;
         ctx->tex_fun = ctx->dxtc.dxt5ys_block;
+        break;
+    case HAP_FMT_BC7:
+        ratio = 4;
+        avctx->codec_tag = MKTAG('H', 'a', 'p', '7');
+        avctx->bits_per_coded_sample = 32;
+        ctx->tex_fun = ctx->bc7c.bc7enc16_block;
         break;
     default:
         av_log(avctx, AV_LOG_ERROR, "Invalid format %02X\n", ctx->opt_tex_fmt);
@@ -334,7 +341,8 @@ static const AVOption options[] = {
     { "format", NULL, OFFSET(opt_tex_fmt), AV_OPT_TYPE_INT, { .i64 = HAP_FMT_RGBDXT1 }, HAP_FMT_RGBDXT1, HAP_FMT_YCOCGDXT5, FLAGS, "format" },
         { "hap",       "Hap 1 (DXT1 textures)", 0, AV_OPT_TYPE_CONST, { .i64 = HAP_FMT_RGBDXT1   }, 0, 0, FLAGS, "format" },
         { "hap_alpha", "Hap Alpha (DXT5 textures)", 0, AV_OPT_TYPE_CONST, { .i64 = HAP_FMT_RGBADXT5  }, 0, 0, FLAGS, "format" },
-        { "hap_q",     "Hap Q (DXT5-YCoCg textures)", 0, AV_OPT_TYPE_CONST, { .i64 = HAP_FMT_YCOCGDXT5 }, 0, 0, FLAGS, "format" },
+        { "hap_q",     "Hap Q (DXT5-YCoCg textures)", 0, AV_OPT_TYPE_CONST, {.i64 = HAP_FMT_YCOCGDXT5 }, 0, 0, FLAGS, "format" },
+        { "hap_q+",    "Hap Q+ (BC7 textures)", 0, AV_OPT_TYPE_CONST, {.i64 = HAP_FMT_BC7 }, 0, 0, FLAGS, "format" },
     { "chunks", "chunk count", OFFSET(opt_chunk_count), AV_OPT_TYPE_INT, {.i64 = 1 }, 1, HAP_MAX_CHUNKS, FLAGS, },
     { "compressor", "second-stage compressor", OFFSET(opt_compressor), AV_OPT_TYPE_INT, { .i64 = HAP_COMP_SNAPPY }, HAP_COMP_NONE, HAP_COMP_SNAPPY, FLAGS, "compressor" },
         { "none",       "None", 0, AV_OPT_TYPE_CONST, { .i64 = HAP_COMP_NONE }, 0, 0, FLAGS, "compressor" },

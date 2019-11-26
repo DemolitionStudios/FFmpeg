@@ -29,11 +29,13 @@
 
 #include "bytestream.h"
 #include "texturedsp.h"
+#include "bc7enc16.h"
 
 enum HapTextureFormat {
     HAP_FMT_RGBDXT1   = 0x0B,
     HAP_FMT_RGBADXT5  = 0x0E,
     HAP_FMT_YCOCGDXT5 = 0x0F,
+    HAP_FMT_BC7       = 0x0C,
 };
 
 enum HapCompressor {
@@ -61,6 +63,7 @@ typedef struct HapContext {
     AVClass *class;
 
     TextureDSPContext dxtc;
+    BC7Enc16Context bc7c;
     GetByteContext gbc;
 
     enum HapTextureFormat opt_tex_fmt; /* Texture type (encoder only) */
