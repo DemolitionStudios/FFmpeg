@@ -68,8 +68,8 @@ static av_cold int init(AVFilterContext *ctx)
             return AVERROR(EINVAL);
         }
 
-        if (s->map[n] < 0 || s->map[n] >= nb_items) {
-            av_log(ctx, AV_LOG_ERROR, "Index out of range.\n");
+        if (s->map[n] < -1 || s->map[n] >= nb_items) {
+            av_log(ctx, AV_LOG_ERROR, "Index %d out of range: [-1, %d].\n", s->map[n], nb_items - 1);
             av_free(mapping);
             return AVERROR(EINVAL);
         }
@@ -99,11 +99,13 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
             AVFrame *out;
 
             x = s->map[n];
-            out = av_frame_clone(s->frames[x]);
-            if (!out)
-                return AVERROR(ENOMEM);
-            out->pts = s->pts[n];
-            ret = ff_filter_frame(ctx->outputs[0], out);
+            if (x >= 0) {
+                out = av_frame_clone(s->frames[x]);
+                if (!out)
+                    return AVERROR(ENOMEM);
+                out->pts = s->pts[n];
+                ret = ff_filter_frame(ctx->outputs[0], out);
+            }
             s->in_frames--;
         }
 

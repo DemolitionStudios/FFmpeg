@@ -283,19 +283,6 @@ static int svq1_encode_plane(SVQ1EncContext *s, int plane,
         s->m.b8_stride                     = 2 * s->m.mb_width + 1;
         s->m.f_code                        = 1;
         s->m.pict_type                     = s->pict_type;
-#if FF_API_MOTION_EST
-FF_DISABLE_DEPRECATION_WARNINGS
-        s->m.me_method                     = s->avctx->me_method;
-        if (s->motion_est == FF_ME_EPZS) {
-            if (s->avctx->me_method == ME_ZERO)
-                s->motion_est = FF_ME_ZERO;
-            else if (s->avctx->me_method == ME_EPZS)
-                s->motion_est = FF_ME_EPZS;
-            else if (s->avctx->me_method == ME_X1)
-                s->motion_est = FF_ME_XONE;
-        }
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
         s->m.motion_est                    = s->motion_est;
         s->m.me.scene_change_score         = 0;
         // s->m.out_format                    = FMT_H263;
@@ -358,7 +345,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
             s->m.first_slice_line = 0;
         }
 
-        ff_fix_long_p_mvs(&s->m);
+        ff_fix_long_p_mvs(&s->m, CANDIDATE_MB_TYPE_INTRA);
         ff_fix_long_mvs(&s->m, NULL, 0, s->m.p_mv_table, s->m.f_code,
                         CANDIDATE_MB_TYPE_INTER, 0);
     }

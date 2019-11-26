@@ -20,10 +20,13 @@
  */
 
 #include "libavutil/avassert.h"
+#include "libavutil/intreadwrite.h"
+#include "libavcodec/png.h"
 #include "avformat.h"
 #include "flac_picture.h"
 #include "id3v2.h"
 #include "internal.h"
+#include "avio_internal.h"
 
 int ff_flac_parse_picture(AVFormatContext *s, uint8_t *buf, int buf_size)
 {
@@ -31,15 +34,13 @@ int ff_flac_parse_picture(AVFormatContext *s, uint8_t *buf, int buf_size)
     enum AVCodecID id = AV_CODEC_ID_NONE;
     AVBufferRef *data = NULL;
     uint8_t mimetype[64], *desc = NULL;
-    AVIOContext *pb = NULL;
+    AVIOContext pb0, *pb = &pb0;
     AVStream *st;
     int width, height, ret = 0;
     int len;
     unsigned int type;
 
-    pb = avio_alloc_context(buf, buf_size, 0, NULL, NULL, NULL, NULL);
-    if (!pb)
-        return AVERROR(ENOMEM);
+    ffio_init_context(pb, buf, buf_size, 0, NULL, NULL, NULL, NULL);
 
     /* read the picture type */
     type = avio_rb32(pb);
@@ -119,6 +120,9 @@ int ff_flac_parse_picture(AVFormatContext *s, uint8_t *buf, int buf_size)
         goto fail;
     }
 
+    if (AV_RB64(data->data) == PNGSIG)
+        id = AV_CODEC_ID_PNG;
+
     st = avformat_new_stream(s, NULL);
     if (!st) {
         RETURN_ERROR(AVERROR(ENOMEM));
@@ -140,14 +144,11 @@ int ff_flac_parse_picture(AVFormatContext *s, uint8_t *buf, int buf_size)
     if (desc)
         av_dict_set(&st->metadata, "title", desc, AV_DICT_DONT_STRDUP_VAL);
 
-    av_freep(&pb);
-
     return 0;
 
 fail:
     av_buffer_unref(&data);
     av_freep(&desc);
-    av_freep(&pb);
 
     return ret;
 }

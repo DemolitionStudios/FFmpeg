@@ -300,7 +300,8 @@ static int atrim_filter_frame(AVFilterLink *inlink, AVFrame *frame)
     s->nb_samples += frame->nb_samples;
     start_sample   = FFMAX(0, start_sample);
     end_sample     = FFMIN(frame->nb_samples, end_sample);
-    av_assert0(start_sample < end_sample || (start_sample == end_sample && !frame->nb_samples));
+    if (start_sample >= end_sample || !frame->nb_samples)
+        goto drop;
 
     if (start_sample) {
         AVFrame *out = ff_get_audio_buffer(ctx->outputs[0], end_sample - start_sample);
@@ -365,7 +366,6 @@ AVFilter ff_af_atrim = {
     .name        = "atrim",
     .description = NULL_IF_CONFIG_SMALL("Pick one continuous section from the input, drop the rest."),
     .init        = init,
-    .query_formats = ff_query_formats_all,
     .priv_size   = sizeof(TrimContext),
     .priv_class  = &atrim_class,
     .inputs      = atrim_inputs,

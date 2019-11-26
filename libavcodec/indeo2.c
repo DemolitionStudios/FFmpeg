@@ -56,7 +56,7 @@ static int ir2_decode_plane(Ir2Context *ctx, int width, int height, uint8_t *dst
     int j;
     int out = 0;
 
-    if (width & 1)
+    if ((width & 1) || width * height / (2*(IR2_CODES - 0x7F)) > get_bits_left(&ctx->gb))
         return AVERROR_INVALIDDATA;
 
     /* first line contain absolute values, other lines contain deltas */
@@ -69,6 +69,8 @@ static int ir2_decode_plane(Ir2Context *ctx, int width, int height, uint8_t *dst
             for (i = 0; i < c * 2; i++)
                 dst[out++] = 0x80;
         } else { /* copy two values from table */
+            if (c <= 0)
+                return AVERROR_INVALIDDATA;
             dst[out++] = table[c * 2];
             dst[out++] = table[(c * 2) + 1];
         }
@@ -78,7 +80,10 @@ static int ir2_decode_plane(Ir2Context *ctx, int width, int height, uint8_t *dst
     for (j = 1; j < height; j++) {
         out = 0;
         while (out < width) {
-            int c = ir2_get_code(&ctx->gb);
+            int c;
+            if (get_bits_left(&ctx->gb) <= 0)
+                return AVERROR_INVALIDDATA;
+            c = ir2_get_code(&ctx->gb);
             if (c >= 0x80) { /* we have a skip */
                 c -= 0x7F;
                 if (out + c*2 > width)
@@ -88,7 +93,10 @@ static int ir2_decode_plane(Ir2Context *ctx, int width, int height, uint8_t *dst
                     out++;
                 }
             } else { /* add two deltas from table */
-                int t    = dst[out - pitch] + (table[c * 2] - 128);
+                int t;
+                if (c <= 0)
+                    return AVERROR_INVALIDDATA;
+                t        = dst[out - pitch] + (table[c * 2] - 128);
                 t        = av_clip_uint8(t);
                 dst[out] = t;
                 out++;
@@ -117,11 +125,15 @@ static int ir2_decode_plane_inter(Ir2Context *ctx, int width, int height, uint8_
     for (j = 0; j < height; j++) {
         out = 0;
         while (out < width) {
+            if (get_bits_left(&ctx->gb) <= 0)
+                return AVERROR_INVALIDDATA;
             c = ir2_get_code(&ctx->gb);
             if (c >= 0x80) { /* we have a skip */
                 c   -= 0x7F;
                 out += c * 2;
             } else { /* add two deltas from table */
+                if (c <= 0)
+                    return AVERROR_INVALIDDATA;
                 t        = dst[out] + (((table[c * 2] - 128)*3) >> 2);
                 t        = av_clip_uint8(t);
                 dst[out] = t;
@@ -149,7 +161,7 @@ static int ir2_decode_frame(AVCodecContext *avctx,
     int start, ret;
     int ltab, ctab;
 
-    if ((ret = ff_reget_buffer(avctx, p)) < 0)
+    if ((ret = ff_reget_buffer(avctx, p, 0)) < 0)
         return ret;
 
     start = 48; /* hardcoded for now */

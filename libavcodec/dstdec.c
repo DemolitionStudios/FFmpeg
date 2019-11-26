@@ -37,7 +37,7 @@
 #define DST_MAX_CHANNELS 6
 #define DST_MAX_ELEMENTS (2 * DST_MAX_CHANNELS)
 
-#define DSD_FS44(sample_rate) (sample_rate * 8 / 44100)
+#define DSD_FS44(sample_rate) (sample_rate * 8LL / 44100)
 
 #define DST_SAMPLES_PER_FRAME(sample_rate) (588 * DSD_FS44(sample_rate))
 
@@ -56,6 +56,7 @@ static const int8_t probs_code_pred_coeff[3][3] = {
 typedef struct ArithCoder {
     unsigned int a;
     unsigned int c;
+    int overread;
 } ArithCoder;
 
 typedef struct Table {
@@ -70,7 +71,7 @@ typedef struct DSTContext {
     GetBitContext gb;
     ArithCoder ac;
     Table fsets, probs;
-    DECLARE_ALIGNED(64, uint8_t, status)[DST_MAX_CHANNELS][16];
+    DECLARE_ALIGNED(16, uint8_t, status)[DST_MAX_CHANNELS][16];
     DECLARE_ALIGNED(16, int16_t, filter)[DST_MAX_ELEMENTS][16][256];
     DSDContext dsdctx[DST_MAX_CHANNELS];
 } DSTContext;
@@ -161,6 +162,10 @@ static int read_table(GetBitContext *gb, Table *t, const int8_t code_pred_coeff[
                     c -= (x + 4) / 8;
                 else
                     c += (-x + 3) / 8;
+                if (!is_signed) {
+                    if (c < offset || c >= offset + (1<<coeff_bits))
+                        return AVERROR_INVALIDDATA;
+                }
                 t->coeff[i][j] = c;
             }
         }
@@ -172,6 +177,7 @@ static void ac_init(ArithCoder *ac, GetBitContext *gb)
 {
     ac->a = 4095;
     ac->c = get_bits(gb, 12);
+    ac->overread = 0;
 }
 
 static av_always_inline void ac_get(ArithCoder *ac, GetBitContext *gb, int p, int *e)
@@ -191,6 +197,8 @@ static av_always_inline void ac_get(ArithCoder *ac, GetBitContext *gb, int p, in
     if (ac->a < 2048) {
         int n = 11 - av_log2(ac->a);
         ac->a <<= n;
+        if (get_bits_left(gb) < n)
+            ac->overread ++;
         ac->c = (ac->c << n) | get_bits(gb, n);
     }
 }
@@ -298,11 +306,15 @@ static int decode_frame(AVCodecContext *avctx, void *data,
 
     /* Filter Coef Sets (10.12) */
 
-    read_table(gb, &s->fsets, fsets_code_pred_coeff, 7, 9, 1, 0);
+    ret = read_table(gb, &s->fsets, fsets_code_pred_coeff, 7, 9, 1, 0);
+    if (ret < 0)
+        return ret;
 
     /* Probability Tables (10.13) */
 
-    read_table(gb, &s->probs, probs_code_pred_coeff, 6, 7, 0, 1);
+    ret = read_table(gb, &s->probs, probs_code_pred_coeff, 6, 7, 0, 1);
+    if (ret < 0)
+        return ret;
 
     /* Arithmetic Coded Data (10.11) */
 
@@ -339,12 +351,15 @@ static int decode_frame(AVCodecContext *avctx, void *data,
                 prob = 128;
             }
 
+            if (ac->overread > 16)
+                return AVERROR_INVALIDDATA;
+
             ac_get(ac, gb, prob, &residual);
             v = ((predict >> 15) ^ residual) & 1;
             dsd[((i >> 3) * channels + ch) << 2] |= v << (7 - (i & 0x7 ));
 
-            AV_WN64A(status + 8, (AV_RN64A(status + 8) << 1) | ((AV_RN64A(status) >> 63) & 1));
-            AV_WN64A(status, (AV_RN64A(status) << 1) | v);
+            AV_WL64A(status + 8, (AV_RL64A(status + 8) << 1) | ((AV_RL64A(status) >> 63) & 1));
+            AV_WL64A(status, (AV_RL64A(status) << 1) | v);
         }
     }
 

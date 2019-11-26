@@ -230,12 +230,17 @@ static void put_amf_string(AVIOContext *pb, const char *str)
     avio_write(pb, str, len);
 }
 
+// FLV timestamps are 32 bits signed, RTMP timestamps should be 32-bit unsigned
+static void put_timestamp(AVIOContext *pb, int64_t ts) {
+    avio_wb24(pb, ts & 0xFFFFFF);
+    avio_w8(pb, (ts >> 24) & 0x7F);
+}
+
 static void put_avc_eos_tag(AVIOContext *pb, unsigned ts)
 {
     avio_w8(pb, FLV_TAG_TYPE_VIDEO);
     avio_wb24(pb, 5);               /* Tag Data Size */
-    avio_wb24(pb, ts);              /* lower 24 bits of timestamp in ms */
-    avio_w8(pb, (ts >> 24) & 0x7F); /* MSB of ts in ms */
+    put_timestamp(pb, ts);
     avio_wb24(pb, 0);               /* StreamId = 0 */
     avio_w8(pb, 23);                /* ub[4] FrameType = 1, ub[4] CodecId = 7 */
     avio_w8(pb, 2);                 /* AVC end of sequence */
@@ -480,7 +485,7 @@ static int unsupported_codec(AVFormatContext *s,
     return AVERROR(ENOSYS);
 }
 
-static void flv_write_codec_header(AVFormatContext* s, AVCodecParameters* par) {
+static void flv_write_codec_header(AVFormatContext* s, AVCodecParameters* par, int64_t ts) {
     int64_t data_size;
     AVIOContext *pb = s->pb;
     FLVContext *flv = s->priv_data;
@@ -492,8 +497,7 @@ static void flv_write_codec_header(AVFormatContext* s, AVCodecParameters* par) {
                 par->codec_type == AVMEDIA_TYPE_VIDEO ?
                         FLV_TAG_TYPE_VIDEO : FLV_TAG_TYPE_AUDIO);
         avio_wb24(pb, 0); // size patched later
-        avio_wb24(pb, 0); // ts
-        avio_w8(pb, 0);   // ts ext
+        put_timestamp(pb, ts);
         avio_wb24(pb, 0); // streamid
         pos = avio_tell(pb);
         if (par->codec_id == AV_CODEC_ID_AAC) {
@@ -610,10 +614,10 @@ static int shift_data(AVFormatContext *s)
      * writing, so we re-open the same output, but for reading. It also avoids
      * a read/seek/write/seek back and forth. */
     avio_flush(s->pb);
-    ret = s->io_open(s, &read_pb, s->filename, AVIO_FLAG_READ, NULL);
+    ret = s->io_open(s, &read_pb, s->url, AVIO_FLAG_READ, NULL);
     if (ret < 0) {
         av_log(s, AV_LOG_ERROR, "Unable to re-open %s output file for "
-               "the second pass (add_keyframe_index)\n", s->filename);
+               "the second pass (add_keyframe_index)\n", s->url);
         goto end;
     }
 
@@ -626,13 +630,15 @@ static int shift_data(AVFormatContext *s)
     avio_seek(read_pb, flv->keyframes_info_offset, SEEK_SET);
     pos = avio_tell(read_pb);
 
-    /* shift data by chunk of at most keyframe *filepositions* and *times* size */
+#define READ_BLOCK do {                                                             \
     read_size[read_buf_id] = avio_read(read_pb, read_buf[read_buf_id], metadata_size);  \
-    read_buf_id ^= 1;
-    do {
+    read_buf_id ^= 1;                                                               \
+} while (0)
 
-        read_size[read_buf_id] = avio_read(read_pb, read_buf[read_buf_id], metadata_size);  \
-        read_buf_id ^= 1;
+    /* shift data by chunk of at most keyframe *filepositions* and *times* size */
+    READ_BLOCK;
+    do {
+        READ_BLOCK;
         n = read_size[read_buf_id];
         if (n < 0)
             break;
@@ -647,11 +653,9 @@ end:
     return ret;
 }
 
-
-static int flv_write_header(AVFormatContext *s)
+static int flv_init(struct AVFormatContext *s)
 {
     int i;
-    AVIOContext *pb = s->pb;
     FLVContext *flv = s->priv_data;
 
     for (i = 0; i < s->nb_streams; i++) {
@@ -730,6 +734,15 @@ static int flv_write_header(AVFormatContext *s)
 
     flv->delay = AV_NOPTS_VALUE;
 
+    return 0;
+}
+
+static int flv_write_header(AVFormatContext *s)
+{
+    int i;
+    AVIOContext *pb = s->pb;
+    FLVContext *flv = s->priv_data;
+
     avio_write(pb, "FLV", 3);
     avio_w8(pb, 1);
     avio_w8(pb, FLV_HEADER_FLAG_HASAUDIO * !!flv->audio_par +
@@ -754,7 +767,7 @@ static int flv_write_header(AVFormatContext *s)
     }
 
     for (i = 0; i < s->nb_streams; i++) {
-        flv_write_codec_header(s, s->streams[i]->codecpar);
+        flv_write_codec_header(s, s->streams[i]->codecpar, 0);
     }
 
     flv->datastart_offset = avio_tell(pb);
@@ -846,20 +859,22 @@ end:
         avio_seek(pb, flv->datasize_offset, SEEK_SET);
         put_amf_double(pb, flv->datasize);
     }
-    if (!(flv->flags & FLV_NO_DURATION_FILESIZE)) {
-        /* update information */
-        if (avio_seek(pb, flv->duration_offset, SEEK_SET) < 0) {
-            av_log(s, AV_LOG_WARNING, "Failed to update header with correct duration.\n");
-        } else {
-            put_amf_double(pb, flv->duration / (double)1000);
-        }
-        if (avio_seek(pb, flv->filesize_offset, SEEK_SET) < 0) {
-            av_log(s, AV_LOG_WARNING, "Failed to update header with correct filesize.\n");
-        } else {
-            put_amf_double(pb, file_size);
+    if (!(flv->flags & FLV_NO_METADATA)) {
+        if (!(flv->flags & FLV_NO_DURATION_FILESIZE)) {
+            /* update information */
+            if (avio_seek(pb, flv->duration_offset, SEEK_SET) < 0) {
+                av_log(s, AV_LOG_WARNING, "Failed to update header with correct duration.\n");
+            } else {
+                put_amf_double(pb, flv->duration / (double)1000);
+            }
+            if (avio_seek(pb, flv->filesize_offset, SEEK_SET) < 0) {
+                av_log(s, AV_LOG_WARNING, "Failed to update header with correct filesize.\n");
+            } else {
+                put_amf_double(pb, file_size);
+            }
         }
     }
-    avio_seek(pb, file_size, SEEK_SET);
+
     return 0;
 }
 
@@ -874,6 +889,11 @@ static int flv_write_packet(AVFormatContext *s, AVPacket *pkt)
     uint8_t *data = NULL;
     int flags = -1, flags_size, ret;
     int64_t cur_offset = avio_tell(pb);
+
+    if (par->codec_type == AVMEDIA_TYPE_AUDIO && !pkt->size) {
+        av_log(s, AV_LOG_WARNING, "Empty audio Packet\n");
+        return AVERROR(EINVAL);
+    }
 
     if (par->codec_id == AV_CODEC_ID_VP6F || par->codec_id == AV_CODEC_ID_VP6A ||
         par->codec_id == AV_CODEC_ID_VP6  || par->codec_id == AV_CODEC_ID_AAC)
@@ -890,9 +910,13 @@ static int flv_write_packet(AVFormatContext *s, AVPacket *pkt)
         if (side && side_size > 0 && (side_size != par->extradata_size || memcmp(side, par->extradata, side_size))) {
             av_free(par->extradata);
             par->extradata = av_mallocz(side_size + AV_INPUT_BUFFER_PADDING_SIZE);
+            if (!par->extradata) {
+                par->extradata_size = 0;
+                return AVERROR(ENOMEM);
+            }
             memcpy(par->extradata, side, side_size);
             par->extradata_size = side_size;
-            flv_write_codec_header(s, par);
+            flv_write_codec_header(s, par, pkt->dts);
         }
     }
 
@@ -903,6 +927,12 @@ static int flv_write_packet(AVFormatContext *s, AVPacket *pkt)
         av_log(s, AV_LOG_WARNING,
                "Packets are not in the proper order with respect to DTS\n");
         return AVERROR(EINVAL);
+    }
+    if (par->codec_id == AV_CODEC_ID_H264 || par->codec_id == AV_CODEC_ID_MPEG4) {
+        if (pkt->pts == AV_NOPTS_VALUE) {
+            av_log(s, AV_LOG_ERROR, "Packet is missing PTS\n");
+            return AVERROR(EINVAL);
+        }
     }
 
     ts = pkt->dts;
@@ -946,10 +976,10 @@ static int flv_write_packet(AVFormatContext *s, AVPacket *pkt)
     } else if (par->codec_id == AV_CODEC_ID_AAC && pkt->size > 2 &&
                (AV_RB16(pkt->data) & 0xfff0) == 0xfff0) {
         if (!s->streams[pkt->stream_index]->nb_frames) {
-        av_log(s, AV_LOG_ERROR, "Malformed AAC bitstream detected: "
-               "use the audio bitstream filter 'aac_adtstoasc' to fix it "
-               "('-bsf:a aac_adtstoasc' option with ffmpeg)\n");
-        return AVERROR_INVALIDDATA;
+            av_log(s, AV_LOG_ERROR, "Malformed AAC bitstream detected: "
+                   "use the audio bitstream filter 'aac_adtstoasc' to fix it "
+                   "('-bsf:a aac_adtstoasc' option with ffmpeg)\n");
+            return AVERROR_INVALIDDATA;
         }
         av_log(s, AV_LOG_WARNING, "aac bitstream error\n");
     }
@@ -970,8 +1000,7 @@ static int flv_write_packet(AVFormatContext *s, AVPacket *pkt)
     }
 
     avio_wb24(pb, size + flags_size);
-    avio_wb24(pb, ts & 0xFFFFFF);
-    avio_w8(pb, (ts >> 24) & 0x7F); // timestamps are 32 bits _signed_
+    put_timestamp(pb, ts);
     avio_wb24(pb, flv->reserved);
 
     if (par->codec_type == AVMEDIA_TYPE_DATA ||
@@ -1058,6 +1087,18 @@ static int flv_write_packet(AVFormatContext *s, AVPacket *pkt)
     return pb->error;
 }
 
+static int flv_check_bitstream(struct AVFormatContext *s, const AVPacket *pkt)
+{
+    int ret = 1;
+    AVStream *st = s->streams[pkt->stream_index];
+
+    if (st->codecpar->codec_id == AV_CODEC_ID_AAC) {
+        if (pkt->size > 2 && (AV_RB16(pkt->data) & 0xfff0) == 0xfff0)
+            ret = ff_stream_add_bitstream_filter(st, "aac_adtstoasc", NULL);
+    }
+    return ret;
+}
+
 static const AVOption options[] = {
     { "flvflags", "FLV muxer flags", offsetof(FLVContext, flags), AV_OPT_TYPE_FLAGS, {.i64 = 0}, INT_MIN, INT_MAX, AV_OPT_FLAG_ENCODING_PARAM, "flvflags" },
     { "aac_seq_header_detect", "Put AAC sequence header based on stream data", 0, AV_OPT_TYPE_CONST, {.i64 = FLV_AAC_SEQ_HEADER_DETECT}, INT_MIN, INT_MAX, AV_OPT_FLAG_ENCODING_PARAM, "flvflags" },
@@ -1083,9 +1124,11 @@ AVOutputFormat ff_flv_muxer = {
     .priv_data_size = sizeof(FLVContext),
     .audio_codec    = CONFIG_LIBMP3LAME ? AV_CODEC_ID_MP3 : AV_CODEC_ID_ADPCM_SWF,
     .video_codec    = AV_CODEC_ID_FLV1,
+    .init           = flv_init,
     .write_header   = flv_write_header,
     .write_packet   = flv_write_packet,
     .write_trailer  = flv_write_trailer,
+    .check_bitstream= flv_check_bitstream,
     .codec_tag      = (const AVCodecTag* const []) {
                           flv_video_codec_ids, flv_audio_codec_ids, 0
                       },

@@ -65,7 +65,7 @@ static int64_t seek_by_sector(AVIOContext *pb, int64_t sector, int64_t offset)
 }
 
 /**
- * @return bytes read, 0 on end of file, or <0 on error
+ * @return bytes read, AVERROR_EOF on end of file, or <0 on error
  */
 static int wtvfile_read_packet(void *opaque, uint8_t *buf, int buf_size)
 {
@@ -76,7 +76,7 @@ static int wtvfile_read_packet(void *opaque, uint8_t *buf, int buf_size)
     if (wf->error || pb->error)
         return -1;
     if (wf->position >= wf->length || avio_feof(pb))
-        return 0;
+        return AVERROR_EOF;
 
     buf_size = FFMIN(buf_size, wf->length - wf->position);
     while(nread < buf_size) {
@@ -149,7 +149,7 @@ static int read_ints(AVIOContext *pb, uint32_t *data, int count)
  * @param depth         File allocation table depth
  * @return NULL on error
  */
-static AVIOContext * wtvfile_open_sector(int first_sector, uint64_t length, int depth, AVFormatContext *s)
+static AVIOContext * wtvfile_open_sector(unsigned first_sector, uint64_t length, int depth, AVFormatContext *s)
 {
     AVIOContext *pb;
     WtvFile *wf;
@@ -305,7 +305,7 @@ static void wtvfile_close(AVIOContext *pb)
     av_freep(&wf->sectors);
     av_freep(&pb->opaque);
     av_freep(&pb->buffer);
-    av_free(pb);
+    avio_context_free(&pb);
 }
 
 /*
@@ -371,7 +371,7 @@ static const ff_asf_guid mediasubtype_dtvccdata =
 static const ff_asf_guid mediasubtype_mpeg2_sections =
     {0x79,0x85,0x9F,0x4A,0xF8,0x6B,0x92,0x43,0x8A,0x6D,0xD2,0xDD,0x09,0xFA,0x78,0x61};
 
-static int read_probe(AVProbeData *p)
+static int read_probe(const AVProbeData *p)
 {
     return ff_guidcmp(p->buf, ff_wtv_guid) ? 0 : AVPROBE_SCORE_MAX;
 }
@@ -957,7 +957,8 @@ static int parse_chunks(AVFormatContext *s, int mode, int64_t seekts, int *len_p
 static int read_header(AVFormatContext *s)
 {
     WtvContext *wtv = s->priv_data;
-    int root_sector, root_size;
+    unsigned root_sector;
+    int root_size;
     uint8_t root[WTV_SECTOR_SIZE];
     AVIOContext *pb;
     int64_t timeline_pos;

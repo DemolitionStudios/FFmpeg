@@ -52,7 +52,7 @@ typedef struct JVDemuxContext {
 
 #define MAGIC " Compression by John M Phillips Copyright (C) 1995 The Bitmap Brothers Ltd."
 
-static int read_probe(AVProbeData *pd)
+static int read_probe(const AVProbeData *pd)
 {
     if (pd->buf[0] == 'J' && pd->buf[1] == 'V' && strlen(MAGIC) + 4 <= pd->buf_size &&
         !memcmp(pd->buf + 4, MAGIC, strlen(MAGIC)))
@@ -113,9 +113,10 @@ static int read_header(AVFormatContext *s)
         return AVERROR(ENOMEM);
 
     jv->frames = av_malloc(ast->nb_index_entries * sizeof(JVFrame));
-    if (!jv->frames)
+    if (!jv->frames) {
+        av_freep(&ast->index_entries);
         return AVERROR(ENOMEM);
-
+    }
     offset = 0x68 + ast->nb_index_entries * 16;
     for (i = 0; i < ast->nb_index_entries; i++) {
         AVIndexEntry *e   = ast->index_entries + i;
@@ -137,6 +138,8 @@ static int read_header(AVFormatContext *s)
                     - jvf->palette_size < 0) {
             if (s->error_recognition & AV_EF_EXPLODE) {
                 read_close(s);
+                av_freep(&jv->frames);
+                av_freep(&ast->index_entries);
                 return AVERROR_INVALIDDATA;
             }
             jvf->audio_size   =
