@@ -174,12 +174,18 @@ static int set_expr(AVExpr **pexpr, const char *expr, const char *option, void *
     return 0;
 }
 
+void ff_eq_init(EQContext *eq)
+{
+    eq->process = process_c;
+    if (ARCH_X86)
+        ff_eq_init_x86(eq);
+}
+
 static int initialize(AVFilterContext *ctx)
 {
     EQContext *eq = ctx->priv;
     int ret;
-
-    eq->process = process_c;
+    ff_eq_init(eq);
 
     if ((ret = set_expr(&eq->contrast_pexpr,     eq->contrast_expr,     "contrast",     ctx)) < 0 ||
         (ret = set_expr(&eq->brightness_pexpr,   eq->brightness_expr,   "brightness",   ctx)) < 0 ||
@@ -191,9 +197,6 @@ static int initialize(AVFilterContext *ctx)
         (ret = set_expr(&eq->gamma_weight_pexpr, eq->gamma_weight_expr, "gamma_weight", ctx)) < 0 )
         return ret;
 
-    if (ARCH_X86)
-        ff_eq_init_x86(eq);
-
     if (eq->eval_mode == EVAL_MODE_INIT) {
         set_gamma(eq);
         set_contrast(eq);
@@ -204,7 +207,7 @@ static int initialize(AVFilterContext *ctx)
     return 0;
 }
 
-static void uninit(AVFilterContext *ctx)
+static av_cold void uninit(AVFilterContext *ctx)
 {
     EQContext *eq = ctx->priv;
 
@@ -254,13 +257,15 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
     AVFilterLink *outlink = inlink->dst->outputs[0];
     EQContext *eq = ctx->priv;
     AVFrame *out;
-    int64_t pos = av_frame_get_pkt_pos(in);
+    int64_t pos = in->pkt_pos;
     const AVPixFmtDescriptor *desc;
     int i;
 
     out = ff_get_video_buffer(outlink, inlink->w, inlink->h);
-    if (!out)
+    if (!out) {
+        av_frame_free(&in);
         return AVERROR(ENOMEM);
+    }
 
     av_frame_copy_props(out, in);
     desc = av_pix_fmt_desc_get(inlink->format);

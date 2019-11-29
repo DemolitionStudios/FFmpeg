@@ -21,6 +21,7 @@
 #include "libavutil/opt.h"
 #include "avfilter.h"
 #include "audio.h"
+#include "filters.h"
 #include "formats.h"
 #include "framesync.h"
 #include "internal.h"
@@ -48,18 +49,12 @@ static const AVOption streamselect_options[] = {
 
 AVFILTER_DEFINE_CLASS(streamselect);
 
-static int filter_frame(AVFilterLink *inlink, AVFrame *in)
-{
-    StreamSelectContext *s = inlink->dst->priv;
-    return ff_framesync_filter_frame(&s->fs, inlink, in);
-}
-
 static int process_frame(FFFrameSync *fs)
 {
     AVFilterContext *ctx = fs->parent;
     StreamSelectContext *s = fs->opaque;
     AVFrame **in = s->frames;
-    int i, j, ret = 0;
+    int i, j, ret = 0, have_out = 0;
 
     for (i = 0; i < ctx->nb_inputs; i++) {
         if ((ret = ff_framesync_get_frame(&s->fs, i, &in[i], 0)) < 0)
@@ -81,19 +76,22 @@ static int process_frame(FFFrameSync *fs)
                 out->pts = av_rescale_q(s->fs.pts, s->fs.time_base, ctx->outputs[i]->time_base);
                 s->last_pts[j] = in[j]->pts;
                 ret = ff_filter_frame(ctx->outputs[i], out);
+                have_out = 1;
                 if (ret < 0)
                     return ret;
             }
         }
     }
 
+    if (!have_out)
+        ff_filter_set_ready(ctx, 100);
     return ret;
 }
 
-static int request_frame(AVFilterLink *outlink)
+static int activate(AVFilterContext *ctx)
 {
-    StreamSelectContext *s = outlink->src->priv;
-    return ff_framesync_request_frame(&s->fs, outlink);
+    StreamSelectContext *s = ctx->priv;
+    return ff_framesync_activate(&s->fs);
 }
 
 static int config_output(AVFilterLink *outlink)
@@ -151,9 +149,8 @@ static int config_output(AVFilterLink *outlink)
     return ff_framesync_configure(&s->fs);
 }
 
-static int parse_definition(AVFilterContext *ctx, int nb_pads, void *filter_frame, int is_audio)
+static int parse_definition(AVFilterContext *ctx, int nb_pads, int is_input, int is_audio)
 {
-    const int is_input = !!filter_frame;
     const char *padtype = is_input ? "in" : "out";
     int i = 0, ret = 0;
 
@@ -169,11 +166,9 @@ static int parse_definition(AVFilterContext *ctx, int nb_pads, void *filter_fram
         av_log(ctx, AV_LOG_DEBUG, "Add %s pad %s\n", padtype, pad.name);
 
         if (is_input) {
-            pad.filter_frame = filter_frame;
             ret = ff_insert_inpad(ctx, i, &pad);
         } else {
             pad.config_props  = config_output;
-            pad.request_frame = request_frame;
             ret = ff_insert_outpad(ctx, i, &pad);
         }
 
@@ -281,8 +276,8 @@ static av_cold int init(AVFilterContext *ctx)
     if (!s->last_pts)
         return AVERROR(ENOMEM);
 
-    if ((ret = parse_definition(ctx, s->nb_inputs, filter_frame, s->is_audio)) < 0 ||
-        (ret = parse_definition(ctx, nb_outputs, NULL, s->is_audio)) < 0)
+    if ((ret = parse_definition(ctx, s->nb_inputs, 1, s->is_audio)) < 0 ||
+        (ret = parse_definition(ctx, nb_outputs, 0, s->is_audio)) < 0)
         return ret;
 
     av_log(ctx, AV_LOG_DEBUG, "Configured with %d inpad and %d outpad\n",
@@ -299,6 +294,12 @@ static av_cold void uninit(AVFilterContext *ctx)
     av_freep(&s->map);
     av_freep(&s->frames);
     ff_framesync_uninit(&s->fs);
+
+    for (int i = 0; i < ctx->nb_inputs; i++)
+        av_freep(&ctx->input_pads[i].name);
+
+    for (int i = 0; i < ctx->nb_outputs; i++)
+        av_freep(&ctx->output_pads[i].name);
 }
 
 static int query_formats(AVFilterContext *ctx)
@@ -332,6 +333,7 @@ AVFilter ff_vf_streamselect = {
     .query_formats   = query_formats,
     .process_command = process_command,
     .uninit          = uninit,
+    .activate        = activate,
     .priv_size       = sizeof(StreamSelectContext),
     .priv_class      = &streamselect_class,
     .flags           = AVFILTER_FLAG_DYNAMIC_INPUTS | AVFILTER_FLAG_DYNAMIC_OUTPUTS,
@@ -347,6 +349,7 @@ AVFilter ff_af_astreamselect = {
     .query_formats   = query_formats,
     .process_command = process_command,
     .uninit          = uninit,
+    .activate        = activate,
     .priv_size       = sizeof(StreamSelectContext),
     .priv_class      = &astreamselect_class,
     .flags           = AVFILTER_FLAG_DYNAMIC_INPUTS | AVFILTER_FLAG_DYNAMIC_OUTPUTS,

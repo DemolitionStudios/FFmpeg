@@ -44,12 +44,6 @@ Use 1/4 pel motion compensation.
 Use loop filter.
 @item qscale
 Use fixed qscale.
-@item gmc
-Use gmc.
-@item mv0
-Always try a mb with mv=<0,0>.
-@item input_preserved
-
 @item pass1
 Use internal 2pass ratecontrol in first pass mode.
 @item pass2
@@ -61,9 +55,11 @@ Do not draw edges.
 @item psnr
 Set error[?] variables during encoding.
 @item truncated
+Input bitstream might be randomly truncated.
+@item drop_changed
+Don't output frames whose parameters differ from first decoded frame in stream.
+Error AVERROR_INPUT_CHANGED is returned when a frame is dropped.
 
-@item naq
-Normalize adaptive quantization.
 @item ildct
 Use interlaced DCT.
 @item low_delay
@@ -84,6 +80,8 @@ Deprecated, use mpegvideo private options instead.
 Apply interlaced motion estimation.
 @item cgop
 Use closed gop.
+@item output_corrupt
+Output even potentially corrupted frames.
 @end table
 
 @item me_method @var{integer} (@emph{encoding,video})
@@ -138,7 +136,8 @@ Set audio sampling rate (in Hz).
 Set number of audio channels.
 
 @item cutoff @var{integer} (@emph{encoding,audio})
-Set cutoff bandwidth.
+Set cutoff bandwidth. (Supported only by selected encoders, see
+their respective documentation sections.)
 
 @item frame_size @var{integer} (@emph{encoding,audio})
 Set audio frame size.
@@ -474,8 +473,6 @@ rate control
 macroblock (MB) type
 @item qp
 per-block quantization parameter (QP)
-@item mv
-motion vector
 @item dct_coeff
 
 @item green_metadata
@@ -485,39 +482,18 @@ display complexity metadata for the upcoming frame, GoP or for a given duration.
 
 @item startcode
 
-@item pts
-
 @item er
 error recognition
 @item mmco
 memory management control operations (H.264)
 @item bugs
 
-@item vis_qp
-visualize quantization parameter (QP), lower QP are tinted greener
-@item vis_mb_type
-visualize block types
 @item buffers
 picture buffer allocations
 @item thread_ops
 threading operations
 @item nomc
 skip motion compensation
-@end table
-
-@item vismv @var{integer} (@emph{decoding,video})
-Visualize motion vectors (MVs).
-
-This option is deprecated, see the codecview filter instead.
-
-Possible values:
-@table @samp
-@item pf
-forward predicted MVs of P-frames
-@item bf
-forward predicted MVs of B-frames
-@item bb
-backward predicted MVs of B-frames
 @end table
 
 @item cmp @var{integer} (@emph{encoding,video})
@@ -756,8 +732,6 @@ Set context model.
 
 @item slice_flags @var{integer}
 
-@item xvmc_acceleration @var{integer}
-
 @item mbd @var{integer} (@emph{encoding,video})
 Set macroblock decision algorithm (high quality mode).
 
@@ -789,14 +763,12 @@ Set noise reduction.
 Set number of bits which should be loaded into the rc buffer before
 decoding starts.
 
-@item flags2 @var{flags} (@emph{decoding/encoding,audio,video})
+@item flags2 @var{flags} (@emph{decoding/encoding,audio,video,subtitles})
 
 Possible values:
 @table @samp
 @item fast
 Allow non spec compliant speedup tricks.
-@item sgop
-Deprecated, use mpegvideo private options instead.
 @item noout
 Skip bitstream encoding.
 @item ignorecrop
@@ -807,11 +779,13 @@ Place global headers at every keyframe instead of in extradata.
 Frame data might be split into multiple chunks.
 @item showall
 Show all frames before the first keyframe.
-@item skiprd
-Deprecated, use mpegvideo private options instead.
 @item export_mvs
 Export motion vectors into frame side-data (see @code{AV_FRAME_DATA_MOTION_VECTORS})
 for codecs that support it. See also @file{doc/examples/export_mvs.c}.
+@item skip_manual
+Do not skip samples and export skip information as frame side data.
+@item ass_ro_flush_noop
+Do not reset ASS ReadOrder field on flush.
 @end table
 
 @item error @var{integer} (@emph{encoding,video})
@@ -994,6 +968,9 @@ Discard all bidirectional frames.
 @item nokey
 Discard all frames excepts keyframes.
 
+@item nointra
+Discard all frames except I frames.
+
 @item all
 Discard all frames.
 @end table
@@ -1017,10 +994,6 @@ Set chroma qp offset from luma.
 
 @item trellis @var{integer} (@emph{encoding,audio,video})
 Set rate-distortion optimal quantization.
-
-@item sc_factor @var{integer} (@emph{encoding,video})
-Set value multiplied by qscale for each frame and added to
-scene_change_score.
 
 @item mv0_threshold @var{integer} (@emph{encoding,video})
 @item b_sensitivity @var{integer} (@emph{encoding,video})
@@ -1074,6 +1047,8 @@ SMPTE ST 428-1
 SMPTE 431-2
 @item smpte432
 SMPTE 432-1
+@item jedec-p22
+JEDEC P22
 @end table
 
 @item color_trc @var{integer} (@emph{decoding/encoding,video})
@@ -1255,7 +1230,7 @@ Interlaced video, top coded first, bottom displayed first
 Interlaced video, bottom coded first, top displayed first
 @end table
 
-@item skip_alpha @var{integer} (@emph{decoding,video})
+@item skip_alpha @var{bool} (@emph{decoding,video})
 Set to 1 to disable processing alpha (transparency). This works like the
 @samp{gray} flag in the @option{flags} option which skips chroma information
 instead of alpha. Default is 0.
@@ -1266,11 +1241,25 @@ instead of alpha. Default is 0.
 @item dump_separator @var{string} (@emph{input})
 Separator used to separate the fields printed on the command line about the
 Stream parameters.
-For example to separate the fields with newlines and indention:
+For example, to separate the fields with newlines and indentation:
 @example
 ffprobe -dump_separator "
                           "  -i ~/videos/matrixbench_mpeg2.mpg
 @end example
+
+@item max_pixels @var{integer} (@emph{decoding/encoding,video})
+Maximum number of pixels per image. This value can be used to avoid out of
+memory failures due to large images.
+
+@item apply_cropping @var{bool} (@emph{decoding,video})
+Enable cropping if cropping parameters are multiples of the required
+alignment for the left and top parameters. If the alignment is not met the
+cropping will be partially applied to maintain alignment.
+Default is 1 (enabled).
+Note: The required alignment depends on if @code{AV_CODEC_FLAG_UNALIGNED} is set and the
+CPU. @code{AV_CODEC_FLAG_UNALIGNED} cannot be changed from the command line. Also hardware
+decoders will not apply left/top Cropping.
+
 
 @end table
 

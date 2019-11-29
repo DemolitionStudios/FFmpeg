@@ -23,13 +23,17 @@
 #ifdef __ELF__
 #   define ELF
 #else
-#   define ELF  #
+#   define ELF #
 #endif
 
 #if HAVE_AS_FUNC
 #   define FUNC
 #else
 #   define FUNC #
+#endif
+
+#ifndef __has_feature
+#   define __has_feature(x) 0
 #endif
 
 .macro  function name, export=0, align=2
@@ -63,6 +67,8 @@ ELF     .size   \name, . - \name
 .else
         .section        .rodata
 .endif
+#elif defined(_WIN32)
+        .section        .rdata
 #elif !defined(__MACH__)
         .section        .rodata
 #else
@@ -82,9 +88,22 @@ ELF     .size   \name, . - \name
         adrp            \rd, \val+(\offset)@PAGE
         add             \rd, \rd, \val+(\offset)@PAGEOFF
     .endif
+#elif CONFIG_PIC && defined(_WIN32)
+    .if \offset < 0
+        adrp            \rd, \val
+        add             \rd, \rd, :lo12:\val
+        sub             \rd, \rd, -(\offset)
+    .else
+        adrp            \rd, \val+(\offset)
+        add             \rd, \rd, :lo12:\val+(\offset)
+    .endif
 #elif CONFIG_PIC
-        adrp            \rd, \val+\offset
-        add             \rd, \rd, :lo12:\val+\offset
+#   if __has_feature(hwaddress_sanitizer)
+        adrp            \rd, :pg_hi21_nc:\val+(\offset)
+#   else
+        adrp            \rd, \val+(\offset)
+#   endif
+        add             \rd, \rd, :lo12:\val+(\offset)
 #else
         ldr             \rd, =\val+\offset
 #endif

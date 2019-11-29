@@ -26,12 +26,14 @@
 #include <stdio.h>
 
 #include "libavutil/attributes.h"
+#include "libavutil/avstring.h"
 #include "libavutil/internal.h"
 #include "libavutil/mem.h"
 #include "libavutil/opt.h"
 
 #include "avfilter.h"
 #include "audio.h"
+#include "filters.h"
 #include "formats.h"
 #include "internal.h"
 #include "video.h"
@@ -44,19 +46,20 @@ typedef struct SplitContext {
 static av_cold int split_init(AVFilterContext *ctx)
 {
     SplitContext *s = ctx->priv;
-    int i;
+    int i, ret;
 
     for (i = 0; i < s->nb_outputs; i++) {
-        char name[32];
         AVFilterPad pad = { 0 };
 
-        snprintf(name, sizeof(name), "output%d", i);
         pad.type = ctx->filter->inputs[0].type;
-        pad.name = av_strdup(name);
+        pad.name = av_asprintf("output%d", i);
         if (!pad.name)
             return AVERROR(ENOMEM);
 
-        ff_insert_outpad(ctx, i, &pad);
+        if ((ret = ff_insert_outpad(ctx, i, &pad)) < 0) {
+            av_freep(&pad.name);
+            return ret;
+        }
     }
 
     return 0;
@@ -78,7 +81,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
     for (i = 0; i < ctx->nb_outputs; i++) {
         AVFrame *buf_out;
 
-        if (ctx->outputs[i]->status)
+        if (ff_outlink_get_status(ctx->outputs[i]))
             continue;
         buf_out = av_frame_clone(frame);
         if (!buf_out) {
@@ -144,7 +147,6 @@ AVFilter ff_af_asplit = {
     .priv_class  = &asplit_class,
     .init        = split_init,
     .uninit      = split_uninit,
-    .query_formats = ff_query_formats_all,
     .inputs      = avfilter_af_asplit_inputs,
     .outputs     = NULL,
     .flags       = AVFILTER_FLAG_DYNAMIC_OUTPUTS,

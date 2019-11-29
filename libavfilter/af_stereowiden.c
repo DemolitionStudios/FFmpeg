@@ -98,7 +98,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
     if (av_frame_is_writable(in)) {
         out = in;
     } else {
-        out = ff_get_audio_buffer(inlink, in->nb_samples);
+        out = ff_get_audio_buffer(outlink, in->nb_samples);
         if (!out) {
             av_frame_free(&in);
             return AVERROR(ENOMEM);
@@ -113,8 +113,13 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
         if (s->cur == s->buffer + s->length)
             s->cur = s->buffer;
 
-        dst[0] = drymix * left - crossfeed * right - feedback * s->cur[1];
-        dst[1] = drymix * right - crossfeed * left - feedback * s->cur[0];
+        if (ctx->is_disabled) {
+            dst[0] = left;
+            dst[1] = right;
+        } else {
+            dst[0] = drymix * left - crossfeed * right - feedback * s->cur[1];
+            dst[1] = drymix * right - crossfeed * left - feedback * s->cur[0];
+        }
 
         s->cur[0] = left;
         s->cur[1] = right;
@@ -159,4 +164,5 @@ AVFilter ff_af_stereowiden = {
     .uninit         = uninit,
     .inputs         = inputs,
     .outputs        = outputs,
+    .flags          = AVFILTER_FLAG_SUPPORT_TIMELINE_INTERNAL,
 };

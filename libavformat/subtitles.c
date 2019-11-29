@@ -194,6 +194,9 @@ void ff_subtitles_queue_finalize(void *log_ctx, FFDemuxSubtitlesQueue *q)
 {
     int i;
 
+    if (!q->nb_subs)
+        return;
+
     qsort(q->subs, q->nb_subs, sizeof(*q->subs),
           q->sort == SUB_SORT_TS_POS ? cmp_pkt_sub_ts_pos
                                      : cmp_pkt_sub_pos_ts);
@@ -211,7 +214,7 @@ int ff_subtitles_queue_read_packet(FFDemuxSubtitlesQueue *q, AVPacket *pkt)
 
     if (q->current_sub_idx == q->nb_subs)
         return AVERROR_EOF;
-    if (av_copy_packet(pkt, sub) < 0) {
+    if (av_packet_ref(pkt, sub) < 0) {
         return AVERROR(ENOMEM);
     }
 
@@ -417,7 +420,7 @@ ptrdiff_t ff_subtitles_read_line(FFTextReader *tr, char *buf, size_t size)
         buf[cur++] = c;
         buf[cur] = '\0';
     }
-    if (ff_text_peek_r8(tr) == '\r')
+    while (ff_text_peek_r8(tr) == '\r')
         ff_text_r8(tr);
     if (ff_text_peek_r8(tr) == '\n')
         ff_text_r8(tr);
