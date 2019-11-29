@@ -18,6 +18,12 @@
 # time make -j9 && make install
 
 
+# --enable-indevs: lavfi (https://lists.ffmpeg.org/pipermail/ffmpeg-user/2012-February/004618.html)
+# todo: --disable-debug ?
+# --disable-devices
+
+# https://trac.ffmpeg.org/wiki/FancyFilteringExamples
+
 #REPO_ROOT=/c/Users/lev/projects/UnityHapPlugin/hapunityplugin
 REPO_ROOT=/d/projects/DemolitionStudios/hapunityplugin
 
@@ -26,12 +32,12 @@ REPO_ROOT=/d/projects/DemolitionStudios/hapunityplugin
 		--enable-asm --enable-x86asm \
 		--arch=x86_64 --target-os=win64 --toolchain=msvc \
 		--disable-encoders --disable-decoders --disable-hwaccels --disable-muxers --disable-demuxers \
-		--disable-parsers --disable-bsfs --disable-protocols --disable-indevs --disable-outdevs \
-		--disable-devices --disable-ffprobe \
+		--disable-parsers --disable-bsfs --disable-protocols --enable-indevs --disable-outdevs \
+		--disable-ffprobe \
 		--enable-avcodec --enable-avformat --enable-swresample --enable-swscale --enable-avfilter \
 		--enable-protocol=file --enable-demuxer=mov,avi,h264 --enable-muxer=mov,avi,h264 \
 		--enable-filters \
-		--enable-parser=h264 --enable-decoder=h264 --enable-decoder=rawvideo  \
+		--enable-gpl --enable-parser=h264 --enable-decoder=h264 --enable-decoder=rawvideo  \
 		--enable-libsnappy --enable-liblz4 --enable-liblizard --enable-libzstd \
 		--enable-decoder=hap --enable-encoder=hap \
 		--extra-cflags="-I ${REPO_ROOT}/3rdparty/snappy-windows-1.1.1.8/include/" \
