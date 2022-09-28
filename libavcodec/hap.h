@@ -37,6 +37,8 @@ enum HapTextureFormat {
     HAP_FMT_YCOCGDXT5 = 0x0F,
     HAP_FMT_RGTC1     = 0x01,
     HAP_FMT_BPTC      = 0x0C,
+    HAP_FMT_BPTC_FU   = 0x02,
+    HAP_FMT_BPTC_FS   = 0x03,
 };
 
 enum HapCompressor {

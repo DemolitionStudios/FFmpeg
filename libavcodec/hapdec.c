@@ -142,9 +142,11 @@ static int hap_parse_frame_header(AVCodecContext *avctx)
         (avctx->codec_tag == MKTAG('H','a','p','5') && (section_type & 0x0F) != HAP_FMT_RGBADXT5) ||
         (avctx->codec_tag == MKTAG('H','a','p','Y') && (section_type & 0x0F) != HAP_FMT_YCOCGDXT5) ||
         (avctx->codec_tag == MKTAG('H','a','p','A') && (section_type & 0x0F) != HAP_FMT_RGTC1) ||
-        ((avctx->codec_tag == MKTAG('H','a','p','M') && (section_type & 0x0F) != HAP_FMT_RGTC1) &&
-                                                        (section_type & 0x0F) != HAP_FMT_YCOCGDXT5) ||
-        (avctx->codec_tag == MKTAG('H','a','p','7') && (section_type & 0x0F) != HAP_FMT_BPTC)) {
+        (avctx->codec_tag == MKTAG('H','a','p','M') && (section_type & 0x0F) != HAP_FMT_RGTC1 &&
+                                                       (section_type & 0x0F) != HAP_FMT_YCOCGDXT5) ||
+        (avctx->codec_tag == MKTAG('H','a','p','7') && (section_type & 0x0F) != HAP_FMT_BPTC) ||
+        (avctx->codec_tag == MKTAG('H','a','p','H') && (section_type & 0x0F) != HAP_FMT_BPTC_FU &&
+                                                       (section_type & 0x0F) != HAP_FMT_BPTC_FS)) {
         av_log(avctx, AV_LOG_ERROR,
                "Invalid texture format %#04x.\n", section_type & 0x0F);
         return AVERROR_INVALIDDATA;
@@ -457,6 +459,14 @@ static av_cold int hap_init(AVCodecContext *avctx)
       // TODO
       ctx->tex_fun = ctx->dxtc.dxt5ys_block;
       avctx->pix_fmt = AV_PIX_FMT_RGBA;
+      ctx->texture_count = 1;
+      break;
+    case MKTAG('H','a','p','H'):
+      texture_name = "BPTC FLOAT";
+      ctx->tex_rat = 16;
+      // TODO
+      ctx->tex_fun = ctx->dxtc.dxt5ys_block;
+      avctx->pix_fmt = AV_PIX_FMT_RGB0;
       ctx->texture_count = 1;
       break;
     default:
