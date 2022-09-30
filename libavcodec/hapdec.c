@@ -147,6 +147,9 @@ static int hap_parse_frame_header(AVCodecContext *avctx)
         (avctx->codec_tag == MKTAG('H','a','p','7') && (section_type & 0x0F) != HAP_FMT_BPTC) ||
         (avctx->codec_tag == MKTAG('H','a','p','H') && (section_type & 0x0F) != HAP_FMT_BPTC_FU &&
                                                        (section_type & 0x0F) != HAP_FMT_BPTC_FS)) {
+        /// Note: when adding a new entry above, don't forget to do the same also near line 473 
+        ///       and in isom.c file near line 286
+
         av_log(avctx, AV_LOG_ERROR,
                "Invalid texture format %#04x.\n", section_type & 0x0F);
         return AVERROR_INVALIDDATA;
