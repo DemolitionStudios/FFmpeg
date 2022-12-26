@@ -31,6 +31,7 @@
 
 #include <stdint.h>
 #include "snappy-c.h"
+#include "gdeflate-c.h"
 
 #include "libavutil/frame.h"
 #include "libavutil/imgutils.h"
@@ -89,7 +90,7 @@ static void hap_write_section_header(PutByteContext *pbc,
     }
 }
 
-static int hap_compress_frame(AVCodecContext *avctx, uint8_t *dst)
+static int hap_compress_frame_snappy(AVCodecContext *avctx, uint8_t *dst)
 {
     HapContext *ctx = avctx->priv_data;
     int i, final_size = 0;
@@ -107,7 +108,7 @@ static int hap_compress_frame(AVCodecContext *avctx, uint8_t *dst)
         }
         chunk->uncompressed_size = ctx->tex_size / ctx->chunk_count;
         chunk->uncompressed_offset = i * chunk->uncompressed_size;
-        chunk->compressed_size = ctx->max_snappy;
+        chunk->compressed_size = ctx->max_compressed;
         chunk_src = ctx->tex_buf + chunk->uncompressed_offset;
         chunk_dst = dst + chunk->compressed_offset;
 
@@ -132,6 +133,23 @@ static int hap_compress_frame(AVCodecContext *avctx, uint8_t *dst)
         }
 
         final_size += chunk->compressed_size;
+    }
+
+    return final_size;
+}
+
+static int hap_compress_frame_gdeflate(AVCodecContext* avctx, uint8_t* dst)
+{
+    HapContext* ctx = avctx->priv_data;
+    int i, final_size = ctx->max_compressed;
+
+    /* GDeflate compression directly to the packet buffer. */
+    //av_log(avctx, AV_LOG_WARNING, "GDeflate max size: %d\n", final_size);
+    bool ok = gdeflate_compress(dst, &final_size, ctx->tex_buf, ctx->tex_size, GDeflateMaximumCompressionLevel, 0);
+    //av_log(avctx, AV_LOG_WARNING, "GDeflate final size: %d\n", final_size);
+    if (!ok) {
+        av_log(avctx, AV_LOG_ERROR, "GDeflate compress error.\n");
+        return AVERROR_BUG;
     }
 
     return final_size;
@@ -197,7 +215,7 @@ static int hap_encode(AVCodecContext *avctx, AVPacket *pkt,
     HapContext *ctx = avctx->priv_data;
     int header_length = hap_header_length(ctx);
     int final_data_size, ret;
-    int pktsize = FFMAX(ctx->tex_size, ctx->max_snappy * ctx->chunk_count) + header_length;
+    int pktsize = FFMAX(ctx->tex_size, ctx->max_compressed * ctx->chunk_count) + header_length;
 
     /* Allocate maximum size packet, shrink later. */
     ret = ff_alloc_packet2(avctx, pkt, pktsize, header_length);
@@ -218,11 +236,21 @@ static int hap_encode(AVCodecContext *avctx, AVPacket *pkt,
         if (ret < 0)
             return ret;
 
-        /* Compress (using Snappy) the frame */
-        final_data_size = hap_compress_frame(avctx, pkt->data + header_length);
-        if (final_data_size < 0)
-            return final_data_size;
-    }
+        if (ctx->opt_compressor == HAP_COMP_SNAPPY) {
+            /* Compress the frame using Snappy */
+            final_data_size = hap_compress_frame_snappy(avctx, pkt->data + header_length);
+            if (final_data_size < 0)
+                return final_data_size;
+        }
+        else if (ctx->opt_compressor == HAP_COMP_GDEFLATE) {
+            /* Compress the frame using GDeflate */
+            final_data_size = hap_compress_frame_gdeflate(avctx, pkt->data + header_length);
+            if (final_data_size < 0)
+                return final_data_size;
+        } else {
+            return -1;
+        }
+    } 
 
     /* Write header at the start. */
     hap_write_frame_header(ctx, pkt->data, final_data_size + header_length);
@@ -295,7 +323,7 @@ static av_cold int hap_init(AVCodecContext *avctx)
         /* No benefit chunking uncompressed data */
         corrected_chunk_count = 1;
 
-        ctx->max_snappy = ctx->tex_size;
+        ctx->max_compressed = ctx->tex_size;
         ctx->tex_buf = NULL;
         break;
     case HAP_COMP_SNAPPY:
@@ -305,7 +333,17 @@ static av_cold int hap_init(AVCodecContext *avctx)
             corrected_chunk_count--;
         }
 
-        ctx->max_snappy = snappy_max_compressed_length(ctx->tex_size / corrected_chunk_count);
+        ctx->max_compressed = snappy_max_compressed_length(ctx->tex_size / corrected_chunk_count);
+        ctx->tex_buf = av_malloc(ctx->tex_size);
+        if (!ctx->tex_buf) {
+            return AVERROR(ENOMEM);
+        }
+        break;
+    case HAP_COMP_GDEFLATE:
+        /* GDeflate uses internal 64Kb chunks */
+        corrected_chunk_count = 1;
+
+        ctx->max_compressed = gdeflate_compress_bound(ctx->tex_size);
         ctx->tex_buf = av_malloc(ctx->tex_size);
         if (!ctx->tex_buf) {
             return AVERROR(ENOMEM);
@@ -344,9 +382,10 @@ static const AVOption options[] = {
         { "hap_q",     "Hap Q (DXT5-YCoCg textures)", 0, AV_OPT_TYPE_CONST, {.i64 = HAP_FMT_YCOCGDXT5 }, 0, 0, FLAGS, "format" },
         { "hap_r",    "Hap R (BC7 textures)", 0, AV_OPT_TYPE_CONST, {.i64 = HAP_FMT_BPTC }, 0, 0, FLAGS, "format" },
     { "chunks", "chunk count", OFFSET(opt_chunk_count), AV_OPT_TYPE_INT, {.i64 = 1 }, 1, HAP_MAX_CHUNKS, FLAGS, },
-    { "compressor", "second-stage compressor", OFFSET(opt_compressor), AV_OPT_TYPE_INT, { .i64 = HAP_COMP_SNAPPY }, HAP_COMP_NONE, HAP_COMP_SNAPPY, FLAGS, "compressor" },
+    { "compressor", "second-stage compressor", OFFSET(opt_compressor), AV_OPT_TYPE_INT, { .i64 = HAP_COMP_SNAPPY }, HAP_COMP_NONE, HAP_COMP_GDEFLATE, FLAGS, "compressor" },
         { "none",       "None", 0, AV_OPT_TYPE_CONST, { .i64 = HAP_COMP_NONE }, 0, 0, FLAGS, "compressor" },
         { "snappy",     "Snappy", 0, AV_OPT_TYPE_CONST, { .i64 = HAP_COMP_SNAPPY }, 0, 0, FLAGS, "compressor" },
+        { "gdeflate",   "GDeflate", 0, AV_OPT_TYPE_CONST, {.i64 = HAP_COMP_GDEFLATE }, 0, 0, FLAGS, "compressor" },
     { NULL },
 };
 

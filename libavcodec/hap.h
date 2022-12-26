@@ -41,10 +41,12 @@ enum HapTextureFormat {
     HAP_FMT_BPTC_FS   = 0x03,
 };
 
+// Top 4 bits
 enum HapCompressor {
-    HAP_COMP_NONE    = 0xA0,
-    HAP_COMP_SNAPPY  = 0xB0,
-    HAP_COMP_COMPLEX = 0xC0,
+    HAP_COMP_NONE     = 0xA0,
+    HAP_COMP_SNAPPY   = 0xB0,
+    HAP_COMP_COMPLEX  = 0xC0,
+    HAP_COMP_GDEFLATE = 0xD0,
 };
 
 enum HapSectionType {
@@ -78,12 +80,12 @@ typedef struct HapContext {
     int *chunk_results;      /* Results from threaded operations */
 
     int tex_rat;             /* Compression ratio */
-    int tex_rat2;             /* Compression ratio of the second texture */
+    int tex_rat2;            /* Compression ratio of the second texture */
     const uint8_t *tex_data; /* Compressed texture */
     uint8_t *tex_buf;        /* Buffer for compressed texture */
     size_t tex_size;         /* Size of the compressed texture */
 
-    size_t max_snappy;       /* Maximum compressed size for snappy buffer */
+    size_t max_compressed;   /* Maximum compressed size for compressed buffer */
 
     int slice_count;         /* Number of slices for threaded operations */
 
