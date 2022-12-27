@@ -46,6 +46,9 @@
 
 #define HAP_MAX_CHUNKS 64
 
+#define GDEFLATE_COMPRESSION_LEVEL GDeflateMinimumCompressionLevel // GDeflateMaximumCompressionLevel
+#define GDEFLATE_NUM_THREADS 32
+
 enum HapHeaderLength {
     /* Short header: four bytes with a 24 bit size value */
     HAP_HDR_SHORT = 4,
@@ -143,9 +146,10 @@ static int hap_compress_frame_gdeflate(AVCodecContext* avctx, uint8_t* dst)
     HapContext* ctx = avctx->priv_data;
     int i, final_size = ctx->max_compressed;
 
+    /// TODO: fix decreasing fps
     /* GDeflate compression directly to the packet buffer. */
     //av_log(avctx, AV_LOG_WARNING, "GDeflate max size: %d\n", final_size);
-    bool ok = gdeflate_compress(dst, &final_size, ctx->tex_buf, ctx->tex_size, GDeflateMaximumCompressionLevel, 0);
+    bool ok = gdeflate_compress(dst, &final_size, ctx->tex_buf, ctx->tex_size, GDEFLATE_COMPRESSION_LEVEL, 0, GDEFLATE_NUM_THREADS);
     //av_log(avctx, AV_LOG_WARNING, "GDeflate final size: %d\n", final_size);
     if (!ok) {
         av_log(avctx, AV_LOG_ERROR, "GDeflate compress error.\n");
@@ -247,6 +251,8 @@ static int hap_encode(AVCodecContext *avctx, AVPacket *pkt,
             final_data_size = hap_compress_frame_gdeflate(avctx, pkt->data + header_length);
             if (final_data_size < 0)
                 return final_data_size;
+
+            ctx->chunks[0].compressor = HAP_COMP_GDEFLATE;
         } else {
             return -1;
         }
@@ -348,6 +354,8 @@ static av_cold int hap_init(AVCodecContext *avctx)
         if (!ctx->tex_buf) {
             return AVERROR(ENOMEM);
         }
+
+        gdeflate_init_thread_pool(GDEFLATE_NUM_THREADS);
         break;
     default:
         av_log(avctx, AV_LOG_ERROR, "Invalid compresor %02X\n", ctx->opt_compressor);
