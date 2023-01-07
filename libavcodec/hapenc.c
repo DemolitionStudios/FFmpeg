@@ -32,6 +32,7 @@
 #include <stdint.h>
 #include "snappy-c.h"
 #include "gdeflate-c.h"
+#include "compressonator.h"
 
 #include "libavutil/frame.h"
 #include "libavutil/imgutils.h"
@@ -50,6 +51,11 @@
 #define GDEFLATE_COMPRESSION_LEVEL GDeflateMinimumCompressionLevel // GDeflateMaximumCompressionLevel
 #define GDEFLATE_NUM_THREADS 32
 
+// Setup Static Host Pluging Libs
+extern void CMP_RegisterHostPlugins();
+
+static CMP_MipSet srcMipSet;
+
 enum HapHeaderLength {
     /* Short header: four bytes with a 24 bit size value */
     HAP_HDR_SHORT = 4,
@@ -62,6 +68,38 @@ static bool hap_is_fixed_chunk_size(HapContext* ctx)
     return ctx->opt_chunk_count < 0;
 }
 
+static int target_foramt_to_compressonator(int format)
+{
+	switch (format) {
+	case HAP_FMT_RGBDXT1:
+		return CMP_FORMAT_BC1;
+	case HAP_FMT_RGBADXT5:
+		return CMP_FORMAT_DXT5;
+	case HAP_FMT_YCOCGDXT5:
+		return CMP_FORMAT_Unknown; // TODO
+	case HAP_FMT_BPTC:
+		return CMP_FORMAT_BC7;
+	default:
+		return CMP_FORMAT_Unknown;
+	}
+}
+
+static CMP_DWORD target_format_to_fourcc(int format)
+{
+	switch (format) {
+	case HAP_FMT_RGBDXT1:
+		return CMP_MAKEFOURCC('D', 'X', 'T', '1');
+	case HAP_FMT_RGBADXT5:
+		return CMP_MAKEFOURCC('D', 'X', 'T', '5');
+	case HAP_FMT_YCOCGDXT5:
+		return CMP_FORMAT_Unknown; // TODO
+	case HAP_FMT_BPTC:
+		return CMP_MAKEFOURCC('B', 'C', '7', 'x');
+	default:
+		return 0;
+	}
+}
+
 static int compress_texture(AVCodecContext *avctx, uint8_t *out, int out_length, const AVFrame *f)
 {
     HapContext *ctx = avctx->priv_data;
@@ -70,13 +108,146 @@ static int compress_texture(AVCodecContext *avctx, uint8_t *out, int out_length,
     if (ctx->tex_size > out_length)
         return AVERROR_BUFFER_TOO_SMALL;
 
-    for (j = 0; j < avctx->height; j += 4) {
-        for (i = 0; i < avctx->width; i += 4) {
-            uint8_t *p = f->data[0] + i * 4 + j * f->linesize[0];
-            const int step = ctx->tex_fun(out, f->linesize[0], p);
-            out += step;
-        }
-    }
+	if (ctx->gpu_encoding_1st_stage)
+	{
+		//CMP_Texture srcTexture;
+		//srcTexture.dwSize = sizeof(srcTexture);
+		//srcTexture.dwWidth = avctx->width;
+		//srcTexture.dwHeight = avctx->height;
+		//srcTexture.dwPitch = 0;
+		//srcTexture.format = CMP_FORMAT_RGBA_8888;
+		//srcTexture.dwDataSize = CMP_CalculateBufferSize(&srcTexture); // f->linesize[0] * avctx->height
+		//srcTexture.pData = (CMP_BYTE*)f->data[0];
+
+		//CMP_Texture destTexture;
+		//destTexture.dwSize = sizeof(destTexture);
+		//destTexture.dwWidth = srcTexture.dwWidth;
+		//destTexture.dwHeight = srcTexture.dwHeight;
+		//destTexture.dwPitch = 0;
+		//destTexture.format = target_foramt_to_compressonator(ctx->opt_tex_fmt);
+		//destTexture.dwDataSize = CMP_CalculateBufferSize(&destTexture);
+		//destTexture.pData = (CMP_BYTE*)out;
+
+		//if (destTexture.dwDataSize != out_length) {
+		//	av_log(avctx, AV_LOG_WARNING, "compressonator texture data_size: %d, out_length: %d", destTexture.dwDataSize, out_length);
+		//	return -1;
+		//}
+
+		//CMP_CompressOptions options = { 0 };
+		//options.dwSize = sizeof(options);
+		//options.fquality = 0.05f;
+		//options.dwnumThreads = 8;
+		//options.nEncodeWith = CMP_GPU_OCL;
+		//av_log(avctx, AV_LOG_WARNING, "compressing using CMP_GPU_OCL");
+
+
+		//CMP_ERROR   cmp_status;
+		//cmp_status = CMP_ConvertTexture(&srcTexture, &destTexture, &options, /*&CompressionCallback*/NULL);
+		//if (cmp_status != CMP_OK)
+		//{
+		//	av_log(avctx, AV_LOG_ERROR, "compressonator texture compression failed: %d", cmp_status);
+		//	return -1;
+		//}
+
+
+		struct KernelOptions   kernel_options;
+		memset(&kernel_options, 0, sizeof(struct KernelOptions));
+
+		kernel_options.format = target_foramt_to_compressonator(ctx->opt_tex_fmt);          // Set the format to process
+		kernel_options.fquality = 0.05f;            // Set the quality of the result
+		/// TODO: force using discrete GPU
+		kernel_options.encodeWith = CMP_GPU_OCL;         // Using OpenCL GPU Encoder, can replace with DXC for DidstMipSetrectX
+		//av_log(avctx, AV_LOG_WARNING, "compressing using CMP_GPU_DXC");
+		kernel_options.threads = 0;            // Auto setting
+		kernel_options.height = avctx->width;
+		kernel_options.width = avctx->height;
+
+#if 0
+		CMP_MipSet srcMipSet;
+		memset(&srcMipSet, 0, sizeof(CMP_MipSet));
+		//srcMipSet.dwSize = sizeof(srcMipSet);
+		srcMipSet.m_nWidth = avctx->width;
+		srcMipSet.m_nHeight = avctx->height;
+		srcMipSet.m_nDepth = 1;
+		srcMipSet.m_format = CMP_FORMAT_RGBA_8888;
+		srcMipSet.dwDataSize = f->linesize[0] * avctx->height;//CMP_CalculateBufferSize(&srcMipSet); 
+		srcMipSet.pData = (CMP_BYTE*)f->data[0];
+
+		srcMipSet.m_Flags = MS_FLAG_Default;
+		srcMipSet.dwWidth = srcMipSet.m_nWidth;
+		srcMipSet.dwHeight = srcMipSet.m_nHeight;
+		srcMipSet.m_ChannelFormat = CF_8bit;
+		srcMipSet.m_dwFourCC = 0;
+		//srcMipSet.m_nMaxMipLevels = pMipSetSRC->m_nMaxMipLevels;
+		srcMipSet.m_nMipLevels = 0;
+		srcMipSet.m_TextureType = TT_2D;
+#else 
+		
+#endif
+
+		CMP_MipSet dstMipSet;
+		memset(&dstMipSet, 0, sizeof(CMP_MipSet));
+		//dstMipSet.m_nWidth = srcMipSet.m_nWidth;
+		//dstMipSet.m_nHeight = srcMipSet.m_nHeight;
+		//dstMipSet.m_nDepth = 1;
+		//dstMipSet.m_format = target_foramt_to_compressonator(ctx->opt_tex_fmt);
+		//if (dstMipSet.m_format == CMP_FORMAT_BC7) {
+		//	av_log(avctx, AV_LOG_WARNING, "CMP_FORMAT_BC7\n");
+		//}
+		//dstMipSet.dwDataSize = out_length;//CMP_CalculateBufferSize(&dstMipSet); // f->linesize[0] * avctx->height
+		//dstMipSet.pData = (CMP_BYTE*)out;
+
+		//dstMipSet.m_Flags = MS_FLAG_Default;
+		//dstMipSet.dwWidth = dstMipSet.m_nWidth;
+		//dstMipSet.dwHeight = dstMipSet.m_nHeight;
+		//dstMipSet.m_ChannelFormat = CF_Compressed;
+		//dstMipSet.m_nBlockHeight = 4;
+		//dstMipSet.m_nBlockWidth = 4;
+		//dstMipSet.m_dwFourCC = target_format_to_fourcc(ctx->opt_tex_fmt);
+		////dstMipSet.m_nMaxMipLevels = pMipSetSRC->m_nMaxMipLevels;
+		//dstMipSet.m_nMipLevels = 0;
+		//dstMipSet.m_TextureType = TT_2D;
+
+		//av_log(avctx, AV_LOG_WARNING, "src datasize: %d; width: %d; height: %d\nout_length: %d\n", srcMipSet.dwDataSize, avctx->width, avctx->height, out_length);
+
+
+		//CMP_ERROR status = CMP_CompressTexture(&kernel_options, srcMipSet, dstMipSet, NULL);
+		CMP_ERROR status = CMP_ProcessTexture(&srcMipSet, &dstMipSet, kernel_options, NULL);
+		
+		//if (cmp_status == CMP_ERR_FAILED_HOST_SETUP)
+		//{
+		//	g_CmdPrams.CompressOptions.nEncodeWith = CMP_Compute_type::CMP_CPU;
+		//	kernel_options.encodeWith = g_CmdPrams.CompressOptions.nEncodeWith;
+		//	memset(&mipSetCmp, 0, sizeof(CMP_MipSet));
+		//	cmp_status = CMP_ProcessTexture(&inMips, &mipSetCmp, kernel_options, CompressionCallback);
+		//}
+		
+		if (status != CMP_OK) {
+			av_log(avctx, AV_LOG_ERROR, "CMP_CompressTexture error: %d\n", status);
+			return -1;
+		}
+
+		if (!dstMipSet.pData || dstMipSet.dwDataSize != out_length) {
+			//av_log(avctx, AV_LOG_WARNING, "compressonator texture data_size: %d, out_length: %d\n", dstMipSet.dwDataSize, out_length);
+			av_log(avctx, AV_LOG_WARNING, "compressonator texture data: %p\n", dstMipSet.pData);
+			return -1;
+		}
+
+		memcpy(out, dstMipSet.pData, out_length);
+		CMP_FreeMipSet(&dstMipSet);
+
+		//CMP_FreeMipSet(&srcMipSet);
+	}
+	else
+	{
+		for (j = 0; j < avctx->height; j += 4) {
+			for (i = 0; i < avctx->width; i += 4) {
+				uint8_t* p = f->data[0] + i * 4 + j * f->linesize[0];
+				const int step = ctx->tex_fun(out, f->linesize[0], p);
+				out += step;
+			}
+		}
+	}
 
     return 0;
 }
@@ -158,7 +329,8 @@ static int hap_compress_frame_snappy(AVCodecContext *avctx, uint8_t *dst)
 static int hap_compress_frame_gdeflate(AVCodecContext* avctx, uint8_t* dst)
 {
     HapContext* ctx = avctx->priv_data;
-    int i, final_size = ctx->max_compressed;
+	int i;
+	size_t final_size = ctx->max_compressed;
 
     /// TODO: fix decreasing fps
     /* GDeflate compression directly to the packet buffer. */
@@ -170,7 +342,7 @@ static int hap_compress_frame_gdeflate(AVCodecContext* avctx, uint8_t* dst)
         return AVERROR_BUG;
     }
 
-    return final_size;
+    return (int)final_size;
 }
 
 static int hap_decode_instructions_length(HapContext *ctx)
@@ -302,6 +474,35 @@ static av_cold int hap_init(AVCodecContext *avctx)
 
     ff_texturedspenc_init(&ctx->dxtc);
     ff_bc7enc16_init(&ctx->bc7c, BC7ENC16_TRUE /* perceptual */, BC7ENC16_MAX_PARTITIONS1 /* max_partitions_to_scan */, 0 /* uber_level */);
+	//CMP_RegisterHostPlugins();
+	CMP_InitFramework();
+	// CMP_SetComputeOptions: force rebuild shaders
+
+#if 1
+	memset(&srcMipSet, 0, sizeof(CMP_MipSet));
+	if (CMP_LoadTexture("C:\\Users\\lev\\Desktop\\1080p.png", &srcMipSet) != CMP_OK) {
+		av_log(avctx, AV_LOG_ERROR, "Error: Loading source file!\n");
+		return -1;
+	}
+
+	//-----------------------------------------------------
+	// when using GPU: The texture must have width and height as a multiple of 4
+	// Check texture for width and height
+	//-----------------------------------------------------
+	if ((srcMipSet.m_nWidth % 4) > 0 || (srcMipSet.m_nHeight % 4) > 0) {
+		av_log(avctx, AV_LOG_ERROR, "Error: Texture width and height must be multiple of 4\n");
+		return -1;
+	}
+
+
+	//----------------------------------
+	// Check we have a image  buffer
+	//----------------------------------
+	if (srcMipSet.pData == NULL) {
+		av_log(avctx, AV_LOG_ERROR, "Error: Texture buffer was not allocated\n");
+		return -1;
+	}
+#endif
 
     switch (ctx->opt_tex_fmt) {
     case HAP_FMT_RGBDXT1:
@@ -435,7 +636,8 @@ static const AVOption options[] = {
         { "hap_q",     "Hap Q (DXT5-YCoCg textures)", 0, AV_OPT_TYPE_CONST, {.i64 = HAP_FMT_YCOCGDXT5 }, 0, 0, FLAGS, "format" },
         { "hap_r",     "Hap R (BC7 textures)", 0, AV_OPT_TYPE_CONST, {.i64 = HAP_FMT_BPTC }, 0, 0, FLAGS, "format" },
     { "chunks", "chunk count", OFFSET(opt_chunk_count), AV_OPT_TYPE_INT, {.i64 = 1 }, -1, HAP_SNAPPY_MAX_CHUNKS, FLAGS, },
-    { "compressor", "second-stage compressor", OFFSET(opt_compressor), AV_OPT_TYPE_INT, { .i64 = HAP_COMP_SNAPPY }, HAP_COMP_NONE, HAP_COMP_GDEFLATE, FLAGS, "compressor" },
+	{ "gpu_encoding_1st_stage", "enable gpu encoding (1st stage)", OFFSET(gpu_encoding_1st_stage), AV_OPT_TYPE_BOOL, {.i64 = 1 }, 0, 1, FLAGS, },
+	{ "compressor", "second-stage compressor", OFFSET(opt_compressor), AV_OPT_TYPE_INT, { .i64 = HAP_COMP_SNAPPY }, HAP_COMP_NONE, HAP_COMP_GDEFLATE, FLAGS, "compressor" },
         { "none",       "None", 0, AV_OPT_TYPE_CONST, { .i64 = HAP_COMP_NONE }, 0, 0, FLAGS, "compressor" },
         { "snappy",     "Snappy", 0, AV_OPT_TYPE_CONST, { .i64 = HAP_COMP_SNAPPY }, 0, 0, FLAGS, "compressor" },
         { "gdeflate",   "GDeflate", 0, AV_OPT_TYPE_CONST, {.i64 = HAP_COMP_GDEFLATE }, 0, 0, FLAGS, "compressor" },

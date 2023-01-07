@@ -96,6 +96,8 @@ typedef struct HapContext {
     /* Pointer to the selected compress or decompress function */
     int (*tex_fun)(uint8_t *dst, ptrdiff_t stride, const uint8_t *block);
     int (*tex_fun2)(uint8_t *dst, ptrdiff_t stride, const uint8_t *block);
+
+	int gpu_encoding_1st_stage;
 } HapContext;
 
 /*
