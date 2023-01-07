@@ -110,54 +110,13 @@ static int compress_texture(AVCodecContext *avctx, uint8_t *out, int out_length,
 
 	if (ctx->gpu_encoding_1st_stage)
 	{
-		//CMP_Texture srcTexture;
-		//srcTexture.dwSize = sizeof(srcTexture);
-		//srcTexture.dwWidth = avctx->width;
-		//srcTexture.dwHeight = avctx->height;
-		//srcTexture.dwPitch = 0;
-		//srcTexture.format = CMP_FORMAT_RGBA_8888;
-		//srcTexture.dwDataSize = CMP_CalculateBufferSize(&srcTexture); // f->linesize[0] * avctx->height
-		//srcTexture.pData = (CMP_BYTE*)f->data[0];
-
-		//CMP_Texture destTexture;
-		//destTexture.dwSize = sizeof(destTexture);
-		//destTexture.dwWidth = srcTexture.dwWidth;
-		//destTexture.dwHeight = srcTexture.dwHeight;
-		//destTexture.dwPitch = 0;
-		//destTexture.format = target_foramt_to_compressonator(ctx->opt_tex_fmt);
-		//destTexture.dwDataSize = CMP_CalculateBufferSize(&destTexture);
-		//destTexture.pData = (CMP_BYTE*)out;
-
-		//if (destTexture.dwDataSize != out_length) {
-		//	av_log(avctx, AV_LOG_WARNING, "compressonator texture data_size: %d, out_length: %d", destTexture.dwDataSize, out_length);
-		//	return -1;
-		//}
-
-		//CMP_CompressOptions options = { 0 };
-		//options.dwSize = sizeof(options);
-		//options.fquality = 0.05f;
-		//options.dwnumThreads = 8;
-		//options.nEncodeWith = CMP_GPU_OCL;
-		//av_log(avctx, AV_LOG_WARNING, "compressing using CMP_GPU_OCL");
-
-
-		//CMP_ERROR   cmp_status;
-		//cmp_status = CMP_ConvertTexture(&srcTexture, &destTexture, &options, /*&CompressionCallback*/NULL);
-		//if (cmp_status != CMP_OK)
-		//{
-		//	av_log(avctx, AV_LOG_ERROR, "compressonator texture compression failed: %d", cmp_status);
-		//	return -1;
-		//}
-
-
-		struct KernelOptions   kernel_options;
+		struct KernelOptions kernel_options;
 		memset(&kernel_options, 0, sizeof(struct KernelOptions));
 
 		kernel_options.format = target_foramt_to_compressonator(ctx->opt_tex_fmt);          // Set the format to process
 		kernel_options.fquality = 0.05f;            // Set the quality of the result
-		/// TODO: force using discrete GPU
+		/// TODO: force using discrete GPU with special global variables
 		kernel_options.encodeWith = CMP_GPU_OCL;         // Using OpenCL GPU Encoder, can replace with DXC for DidstMipSetrectX
-		//av_log(avctx, AV_LOG_WARNING, "compressing using CMP_GPU_DXC");
 		kernel_options.threads = 0;            // Auto setting
 		kernel_options.height = avctx->width;
 		kernel_options.width = avctx->height;
@@ -181,35 +140,33 @@ static int compress_texture(AVCodecContext *avctx, uint8_t *out, int out_length,
 		//srcMipSet.m_nMaxMipLevels = pMipSetSRC->m_nMaxMipLevels;
 		srcMipSet.m_nMipLevels = 0;
 		srcMipSet.m_TextureType = TT_2D;
-#else 
-		
 #endif
 
 		CMP_MipSet dstMipSet;
 		memset(&dstMipSet, 0, sizeof(CMP_MipSet));
-		//dstMipSet.m_nWidth = srcMipSet.m_nWidth;
-		//dstMipSet.m_nHeight = srcMipSet.m_nHeight;
-		//dstMipSet.m_nDepth = 1;
-		//dstMipSet.m_format = target_foramt_to_compressonator(ctx->opt_tex_fmt);
-		//if (dstMipSet.m_format == CMP_FORMAT_BC7) {
-		//	av_log(avctx, AV_LOG_WARNING, "CMP_FORMAT_BC7\n");
-		//}
-		//dstMipSet.dwDataSize = out_length;//CMP_CalculateBufferSize(&dstMipSet); // f->linesize[0] * avctx->height
-		//dstMipSet.pData = (CMP_BYTE*)out;
+#if 0
+		dstMipSet.m_nWidth = srcMipSet.m_nWidth;
+		dstMipSet.m_nHeight = srcMipSet.m_nHeight;
+		dstMipSet.m_nDepth = 1;
+		dstMipSet.m_format = target_foramt_to_compressonator(ctx->opt_tex_fmt);
+		if (dstMipSet.m_format == CMP_FORMAT_BC7) {
+			av_log(avctx, AV_LOG_WARNING, "CMP_FORMAT_BC7\n");
+		}
+		dstMipSet.dwDataSize = out_length;//CMP_CalculateBufferSize(&dstMipSet); // f->linesize[0] * avctx->height
+		dstMipSet.pData = (CMP_BYTE*)out;
 
-		//dstMipSet.m_Flags = MS_FLAG_Default;
-		//dstMipSet.dwWidth = dstMipSet.m_nWidth;
-		//dstMipSet.dwHeight = dstMipSet.m_nHeight;
-		//dstMipSet.m_ChannelFormat = CF_Compressed;
-		//dstMipSet.m_nBlockHeight = 4;
-		//dstMipSet.m_nBlockWidth = 4;
-		//dstMipSet.m_dwFourCC = target_format_to_fourcc(ctx->opt_tex_fmt);
-		////dstMipSet.m_nMaxMipLevels = pMipSetSRC->m_nMaxMipLevels;
-		//dstMipSet.m_nMipLevels = 0;
-		//dstMipSet.m_TextureType = TT_2D;
-
+		dstMipSet.m_Flags = MS_FLAG_Default;
+		dstMipSet.dwWidth = dstMipSet.m_nWidth;
+		dstMipSet.dwHeight = dstMipSet.m_nHeight;
+		dstMipSet.m_ChannelFormat = CF_Compressed;
+		dstMipSet.m_nBlockHeight = 4;
+		dstMipSet.m_nBlockWidth = 4;
+		dstMipSet.m_dwFourCC = target_format_to_fourcc(ctx->opt_tex_fmt);
+		//dstMipSet.m_nMaxMipLevels = pMipSetSRC->m_nMaxMipLevels;
+		dstMipSet.m_nMipLevels = 0;
+		dstMipSet.m_TextureType = TT_2D;
+#endif
 		//av_log(avctx, AV_LOG_WARNING, "src datasize: %d; width: %d; height: %d\nout_length: %d\n", srcMipSet.dwDataSize, avctx->width, avctx->height, out_length);
-
 
 		//CMP_ERROR status = CMP_CompressTexture(&kernel_options, srcMipSet, dstMipSet, NULL);
 		CMP_ERROR status = CMP_ProcessTexture(&srcMipSet, &dstMipSet, kernel_options, NULL);
