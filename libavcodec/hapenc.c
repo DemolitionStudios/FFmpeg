@@ -44,7 +44,8 @@
 #include "internal.h"
 #include "texturedsp.h"
 
-#define HAP_MAX_CHUNKS 64
+#define HAP_SNAPPY_MAX_CHUNKS 64
+#define HAP_SNAPPY_FIXED_CHUNK_SIZE 65536
 
 #define GDEFLATE_COMPRESSION_LEVEL GDeflateMinimumCompressionLevel // GDeflateMaximumCompressionLevel
 #define GDEFLATE_NUM_THREADS 32
@@ -55,6 +56,11 @@ enum HapHeaderLength {
     /* Long header: eight bytes with a 32 bit size value */
     HAP_HDR_LONG = 8,
 };
+
+static bool hap_is_fixed_chunk_size(HapContext* ctx)
+{
+    return ctx->opt_chunk_count < 0;
+}
 
 static int compress_texture(AVCodecContext *avctx, uint8_t *out, int out_length, const AVFrame *f)
 {
@@ -98,6 +104,7 @@ static int hap_compress_frame_snappy(AVCodecContext *avctx, uint8_t *dst)
     HapContext *ctx = avctx->priv_data;
     int i, final_size = 0;
 
+    size_t uncompressed_size_remaining = ctx->tex_size;
     for (i = 0; i < ctx->chunk_count; i++) {
         HapChunk *chunk = &ctx->chunks[i];
         uint8_t *chunk_src, *chunk_dst;
@@ -107,10 +114,17 @@ static int hap_compress_frame_snappy(AVCodecContext *avctx, uint8_t *dst)
             chunk->compressed_offset = 0;
         } else {
             chunk->compressed_offset = ctx->chunks[i-1].compressed_offset
-                                       + ctx->chunks[i-1].compressed_size;
+                                     + ctx->chunks[i-1].compressed_size;
         }
-        chunk->uncompressed_size = ctx->tex_size / ctx->chunk_count;
-        chunk->uncompressed_offset = i * chunk->uncompressed_size;
+        if (hap_is_fixed_chunk_size(ctx)) {
+            chunk->uncompressed_size = FFMIN(HAP_SNAPPY_FIXED_CHUNK_SIZE, uncompressed_size_remaining);
+            //av_log(avctx, AV_LOG_WARNING, "chunk %d; size: %d; offset: %d\n", i, chunk->uncompressed_size, chunk->uncompressed_offset);
+            chunk->uncompressed_offset = i * chunk->uncompressed_size; // All chunks are same size, except for the last
+            uncompressed_size_remaining -= chunk->uncompressed_size;
+        } else {
+            chunk->uncompressed_size = ctx->tex_size / ctx->chunk_count;
+            chunk->uncompressed_offset = i * chunk->uncompressed_size;
+        }
         chunk->compressed_size = ctx->max_compressed;
         chunk_src = ctx->tex_buf + chunk->uncompressed_offset;
         chunk_dst = dst + chunk->compressed_offset;
@@ -119,12 +133,12 @@ static int hap_compress_frame_snappy(AVCodecContext *avctx, uint8_t *dst)
         ret = snappy_compress(chunk_src, chunk->uncompressed_size,
                               chunk_dst, &chunk->compressed_size);
         if (ret != SNAPPY_OK) {
-            av_log(avctx, AV_LOG_ERROR, "Snappy compress error.\n");
+            av_log(avctx, AV_LOG_ERROR, "Snappy compress error: %d; max_compressed: %d\n", ret, ctx->max_compressed);
             return AVERROR_BUG;
         }
 
         /* If there is no gain from snappy, just use the raw texture. */
-        if (chunk->compressed_size >= chunk->uncompressed_size) {
+        if (chunk->compressed_size >= chunk->uncompressed_size && !hap_is_fixed_chunk_size(ctx)) {
             av_log(avctx, AV_LOG_VERBOSE,
                    "Snappy buffer bigger than uncompressed (%"SIZE_SPECIFIER" >= %"SIZE_SPECIFIER" bytes).\n",
                    chunk->compressed_size, chunk->uncompressed_size);
@@ -333,13 +347,20 @@ static av_cold int hap_init(AVCodecContext *avctx)
         ctx->tex_buf = NULL;
         break;
     case HAP_COMP_SNAPPY:
-        /* Round the chunk count to divide evenly on DXT block edges */
-        corrected_chunk_count = av_clip(ctx->opt_chunk_count, 1, HAP_MAX_CHUNKS);
-        while ((ctx->tex_size / (64 / ratio)) % corrected_chunk_count != 0) {
-            corrected_chunk_count--;
+        if (hap_is_fixed_chunk_size(ctx)) {
+            corrected_chunk_count = (ctx->tex_size + HAP_SNAPPY_FIXED_CHUNK_SIZE - 1) / HAP_SNAPPY_FIXED_CHUNK_SIZE;
+            ctx->max_compressed = snappy_max_compressed_length(HAP_SNAPPY_FIXED_CHUNK_SIZE);
+            av_log(avctx, AV_LOG_WARNING, "Snappy chunks fixed size; count: %d; tex_size: %d\n", corrected_chunk_count, ctx->tex_size);
+        }
+        else {
+            /* Round the chunk count to divide evenly on DXT block edges */
+            corrected_chunk_count = av_clip(ctx->opt_chunk_count, 1, HAP_SNAPPY_MAX_CHUNKS);
+            while ((ctx->tex_size / (64 / ratio)) % corrected_chunk_count != 0) {
+                corrected_chunk_count--;
+            }
+            ctx->max_compressed = snappy_max_compressed_length(ctx->tex_size / corrected_chunk_count);
         }
 
-        ctx->max_compressed = snappy_max_compressed_length(ctx->tex_size / corrected_chunk_count);
         ctx->tex_buf = av_malloc(ctx->tex_size);
         if (!ctx->tex_buf) {
             return AVERROR(ENOMEM);
@@ -361,7 +382,7 @@ static av_cold int hap_init(AVCodecContext *avctx)
         av_log(avctx, AV_LOG_ERROR, "Invalid compresor %02X\n", ctx->opt_compressor);
         return AVERROR_INVALIDDATA;
     }
-    if (corrected_chunk_count != ctx->opt_chunk_count) {
+    if (corrected_chunk_count != ctx->opt_chunk_count && !hap_is_fixed_chunk_size(ctx)) {
         av_log(avctx, AV_LOG_INFO, "%d chunks requested but %d used.\n",
                                     ctx->opt_chunk_count, corrected_chunk_count);
     }
@@ -381,6 +402,30 @@ static av_cold int hap_close(AVCodecContext *avctx)
     return 0;
 }
 
+/* TODO */
+/*
+  1. GPU encoder : GPU snappy / gdeflate(cuda) + GPU texture compression
+  FFmpeg or CC based : https://github.com/disguise-one/hap-encoder-adobe-cc
+  https://notchlc.notch.one/: encode speed baseline
+  By utilizing the full power of the GPU to massively accelerate the encoding process,
+  you can expect to encode 1080p24 at a rate of 5.7 mins of footage in 1 minute of encoding(on a consumer - grade PC).
+
+      https ://github.com/GPUOpen-Tools/compressonator/tree/master/cmp_core/shaders
+      or
+      https ://github.com/richgel999/bc7enc_rdo
+      https ://github.com/BinomialLLC/bc7e
+      https ://github.com/richgel999/bc7enc
+      https ://github.com/richgel999/bc7enc16
+      https ://www.phoronix.com/news/OSS-Game-Industry-Concerns
+      https ://twitter.com/richgel999/status/1454580043607334915
+      https ://github.com/walbourn/directx-sdk-samples/tree/main/BC6HBC7EncoderCS
+      https ://github.com/mvji/SPX-GC
+
+  2. Try lossless texture compression
+  3. NotchLC capture shaders with PIX
+  4. Uncompressed YUV format - good for gdeflate probably (planar)
+  */
+
 #define OFFSET(x) offsetof(HapContext, x)
 #define FLAGS     AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM
 static const AVOption options[] = {
@@ -388,8 +433,8 @@ static const AVOption options[] = {
         { "hap",       "Hap 1 (DXT1 textures)", 0, AV_OPT_TYPE_CONST, { .i64 = HAP_FMT_RGBDXT1   }, 0, 0, FLAGS, "format" },
         { "hap_alpha", "Hap Alpha (DXT5 textures)", 0, AV_OPT_TYPE_CONST, { .i64 = HAP_FMT_RGBADXT5  }, 0, 0, FLAGS, "format" },
         { "hap_q",     "Hap Q (DXT5-YCoCg textures)", 0, AV_OPT_TYPE_CONST, {.i64 = HAP_FMT_YCOCGDXT5 }, 0, 0, FLAGS, "format" },
-        { "hap_r",    "Hap R (BC7 textures)", 0, AV_OPT_TYPE_CONST, {.i64 = HAP_FMT_BPTC }, 0, 0, FLAGS, "format" },
-    { "chunks", "chunk count", OFFSET(opt_chunk_count), AV_OPT_TYPE_INT, {.i64 = 1 }, 1, HAP_MAX_CHUNKS, FLAGS, },
+        { "hap_r",     "Hap R (BC7 textures)", 0, AV_OPT_TYPE_CONST, {.i64 = HAP_FMT_BPTC }, 0, 0, FLAGS, "format" },
+    { "chunks", "chunk count", OFFSET(opt_chunk_count), AV_OPT_TYPE_INT, {.i64 = 1 }, -1, HAP_SNAPPY_MAX_CHUNKS, FLAGS, },
     { "compressor", "second-stage compressor", OFFSET(opt_compressor), AV_OPT_TYPE_INT, { .i64 = HAP_COMP_SNAPPY }, HAP_COMP_NONE, HAP_COMP_GDEFLATE, FLAGS, "compressor" },
         { "none",       "None", 0, AV_OPT_TYPE_CONST, { .i64 = HAP_COMP_NONE }, 0, 0, FLAGS, "compressor" },
         { "snappy",     "Snappy", 0, AV_OPT_TYPE_CONST, { .i64 = HAP_COMP_SNAPPY }, 0, 0, FLAGS, "compressor" },
