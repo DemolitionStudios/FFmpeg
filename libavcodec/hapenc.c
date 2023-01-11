@@ -100,6 +100,21 @@ static CMP_DWORD target_format_to_fourcc(int format)
 	}
 }
 
+// FPS
+// 
+// BC7, 1080p
+// Default: 1.3
+// Compressonator CPU: 3.3
+// Compressonator HPC: 3.3 
+// Compressonator DXC: 1.1
+
+// DXT1, 1080p
+// Default: 27
+// Compressonator CPU: 16
+// Compressonator HPC: 16
+// Compressonator DXC: 
+
+
 static int compress_texture(AVCodecContext *avctx, uint8_t *out, int out_length, const AVFrame *f)
 {
     HapContext *ctx = avctx->priv_data;
@@ -108,6 +123,7 @@ static int compress_texture(AVCodecContext *avctx, uint8_t *out, int out_length,
     if (ctx->tex_size > out_length)
         return AVERROR_BUFFER_TOO_SMALL;
 
+	/// TODO: alternate between CPU / GPU compress threads to utilize both
 	if (ctx->gpu_encoding_1st_stage)
 	{
 		struct KernelOptions kernel_options;
@@ -116,11 +132,12 @@ static int compress_texture(AVCodecContext *avctx, uint8_t *out, int out_length,
 		kernel_options.format = target_foramt_to_compressonator(ctx->opt_tex_fmt);          // Set the format to process
 		kernel_options.fquality = 0.05f;            // Set the quality of the result
 		/// TODO: force using discrete GPU with special global variables
-		kernel_options.encodeWith = CMP_GPU_OCL;         // Using OpenCL GPU Encoder, can replace with DXC for DidstMipSetrectX
+		kernel_options.encodeWith = CMP_CPU;         // Using OpenCL GPU Encoder, can replace with DXC for DidstMipSetrectX
 		kernel_options.threads = 0;            // Auto setting
 		kernel_options.height = avctx->width;
 		kernel_options.width = avctx->height;
 
+		/// TODO: inspect srcMipSet and determine what's wrong
 #if 0
 		CMP_MipSet srcMipSet;
 		memset(&srcMipSet, 0, sizeof(CMP_MipSet));
@@ -436,28 +453,40 @@ static av_cold int hap_init(AVCodecContext *avctx)
 	// CMP_SetComputeOptions: force rebuild shaders
 
 #if 1
-	memset(&srcMipSet, 0, sizeof(CMP_MipSet));
-	if (CMP_LoadTexture("C:\\Users\\lev\\Desktop\\1080p.png", &srcMipSet) != CMP_OK) {
-		av_log(avctx, AV_LOG_ERROR, "Error: Loading source file!\n");
-		return -1;
-	}
+	if (ctx->gpu_encoding_1st_stage)
+	{
+		memset(&srcMipSet, 0, sizeof(CMP_MipSet));
+		if (avctx->width == 1920) {
+			if (CMP_LoadTexture("C:\\Users\\lev\\Desktop\\1080p.png", &srcMipSet) != CMP_OK) {
+				av_log(avctx, AV_LOG_ERROR, "Error: Loading source file!\n");
+				return -1;
+			}
+		}
+		else if (avctx->width == 8192) {
+			if (CMP_LoadTexture("C:\\Users\\lev\\Desktop\\8192x8192.png", &srcMipSet) != CMP_OK) {
+				av_log(avctx, AV_LOG_ERROR, "Error: Loading source file!\n");
+				return -1;
+			}
+		}
 
-	//-----------------------------------------------------
-	// when using GPU: The texture must have width and height as a multiple of 4
-	// Check texture for width and height
-	//-----------------------------------------------------
-	if ((srcMipSet.m_nWidth % 4) > 0 || (srcMipSet.m_nHeight % 4) > 0) {
-		av_log(avctx, AV_LOG_ERROR, "Error: Texture width and height must be multiple of 4\n");
-		return -1;
-	}
+
+		//-----------------------------------------------------
+		// when using GPU: The texture must have width and height as a multiple of 4
+		// Check texture for width and height
+		//-----------------------------------------------------
+		if ((srcMipSet.m_nWidth % 4) > 0 || (srcMipSet.m_nHeight % 4) > 0) {
+			av_log(avctx, AV_LOG_ERROR, "Error: Texture width and height must be multiple of 4\n");
+			return -1;
+		}
 
 
-	//----------------------------------
-	// Check we have a image  buffer
-	//----------------------------------
-	if (srcMipSet.pData == NULL) {
-		av_log(avctx, AV_LOG_ERROR, "Error: Texture buffer was not allocated\n");
-		return -1;
+		//----------------------------------
+		// Check we have a image  buffer
+		//----------------------------------
+		if (srcMipSet.pData == NULL) {
+			av_log(avctx, AV_LOG_ERROR, "Error: Texture buffer was not allocated\n");
+			return -1;
+		}
 	}
 #endif
 
@@ -617,6 +646,7 @@ AVCodec ff_hap_encoder = {
     .priv_class     = &hapenc_class,
     .init           = hap_init,
     .encode2        = hap_encode,
+	.capabilities   = AV_CODEC_CAP_FRAME_THREADS | AV_CODEC_CAP_INTRA_ONLY,
     .close          = hap_close,
     .pix_fmts       = (const enum AVPixelFormat[]) {
         AV_PIX_FMT_RGBA, AV_PIX_FMT_NONE,
