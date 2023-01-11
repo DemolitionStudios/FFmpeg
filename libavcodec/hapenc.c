@@ -125,99 +125,119 @@ static int compress_texture(AVCodecContext *avctx, uint8_t *out, int out_length,
         return AVERROR_BUFFER_TOO_SMALL;
 
 	/// TODO: alternate between CPU / GPU compress threads to utilize both
-	if (ctx->gpu_encoding_1st_stage)
+//	if (ctx->gpu_encoding_1st_stage)
+//	{
+//		struct KernelOptions kernel_options;
+//		memset(&kernel_options, 0, sizeof(struct KernelOptions));
+//
+//		kernel_options.format = target_foramt_to_compressonator(ctx->opt_tex_fmt);          // Set the format to process
+//		kernel_options.fquality = 0.05f;            // Set the quality of the result
+//		/// TODO: force using discrete GPU with special global variables
+//		kernel_options.encodeWith = CMP_CPU;         // Using OpenCL GPU Encoder, can replace with DXC for DidstMipSetrectX
+//		kernel_options.threads = 0;            // Auto setting
+//		kernel_options.height = avctx->width;
+//		kernel_options.width = avctx->height;
+//
+//		/// TODO: inspect srcMipSet and determine what's wrong
+//#if 0
+//		CMP_MipSet srcMipSet;
+//		memset(&srcMipSet, 0, sizeof(CMP_MipSet));
+//		//srcMipSet.dwSize = sizeof(srcMipSet);
+//		srcMipSet.m_nWidth = avctx->width;
+//		srcMipSet.m_nHeight = avctx->height;
+//		srcMipSet.m_nDepth = 1;
+//		srcMipSet.m_format = CMP_FORMAT_RGBA_8888;
+//		srcMipSet.dwDataSize = f->linesize[0] * avctx->height;//CMP_CalculateBufferSize(&srcMipSet); 
+//		srcMipSet.pData = (CMP_BYTE*)f->data[0];
+//
+//		srcMipSet.m_Flags = MS_FLAG_Default;
+//		srcMipSet.dwWidth = srcMipSet.m_nWidth;
+//		srcMipSet.dwHeight = srcMipSet.m_nHeight;
+//		srcMipSet.m_ChannelFormat = CF_8bit;
+//		srcMipSet.m_dwFourCC = 0;
+//		//srcMipSet.m_nMaxMipLevels = pMipSetSRC->m_nMaxMipLevels;
+//		srcMipSet.m_nMipLevels = 0;
+//		srcMipSet.m_TextureType = TT_2D;
+//#endif
+//
+//		CMP_MipSet dstMipSet;
+//		memset(&dstMipSet, 0, sizeof(CMP_MipSet));
+//#if 0
+//		dstMipSet.m_nWidth = srcMipSet.m_nWidth;
+//		dstMipSet.m_nHeight = srcMipSet.m_nHeight;
+//		dstMipSet.m_nDepth = 1;
+//		dstMipSet.m_format = target_foramt_to_compressonator(ctx->opt_tex_fmt);
+//		if (dstMipSet.m_format == CMP_FORMAT_BC7) {
+//			av_log(avctx, AV_LOG_WARNING, "CMP_FORMAT_BC7\n");
+//		}
+//		dstMipSet.dwDataSize = out_length;//CMP_CalculateBufferSize(&dstMipSet); // f->linesize[0] * avctx->height
+//		dstMipSet.pData = (CMP_BYTE*)out;
+//
+//		dstMipSet.m_Flags = MS_FLAG_Default;
+//		dstMipSet.dwWidth = dstMipSet.m_nWidth;
+//		dstMipSet.dwHeight = dstMipSet.m_nHeight;
+//		dstMipSet.m_ChannelFormat = CF_Compressed;
+//		dstMipSet.m_nBlockHeight = 4;
+//		dstMipSet.m_nBlockWidth = 4;
+//		dstMipSet.m_dwFourCC = target_format_to_fourcc(ctx->opt_tex_fmt);
+//		//dstMipSet.m_nMaxMipLevels = pMipSetSRC->m_nMaxMipLevels;
+//		dstMipSet.m_nMipLevels = 0;
+//		dstMipSet.m_TextureType = TT_2D;
+//#endif
+//		//av_log(avctx, AV_LOG_WARNING, "src datasize: %d; width: %d; height: %d\nout_length: %d\n", srcMipSet.dwDataSize, avctx->width, avctx->height, out_length);
+//
+//		//CMP_ERROR status = CMP_CompressTexture(&kernel_options, srcMipSet, dstMipSet, NULL);
+//		CMP_ERROR status = CMP_ProcessTexture(&srcMipSet, &dstMipSet, kernel_options, NULL);
+//		
+//		//if (cmp_status == CMP_ERR_FAILED_HOST_SETUP)
+//		//{
+//		//	g_CmdPrams.CompressOptions.nEncodeWith = CMP_Compute_type::CMP_CPU;
+//		//	kernel_options.encodeWith = g_CmdPrams.CompressOptions.nEncodeWith;
+//		//	memset(&mipSetCmp, 0, sizeof(CMP_MipSet));
+//		//	cmp_status = CMP_ProcessTexture(&inMips, &mipSetCmp, kernel_options, CompressionCallback);
+//		//}
+//		
+//		if (status != CMP_OK) {
+//			av_log(avctx, AV_LOG_ERROR, "CMP_CompressTexture error: %d\n", status);
+//			return -1;
+//		}
+//
+//		if (!dstMipSet.pData || dstMipSet.dwDataSize != out_length) {
+//			//av_log(avctx, AV_LOG_WARNING, "compressonator texture data_size: %d, out_length: %d\n", dstMipSet.dwDataSize, out_length);
+//			av_log(avctx, AV_LOG_WARNING, "compressonator texture data: %p\n", dstMipSet.pData);
+//			return -1;
+//		}
+//
+//		memcpy(out, dstMipSet.pData, out_length);
+//		CMP_FreeMipSet(&dstMipSet);
+//
+//		//CMP_FreeMipSet(&srcMipSet);
+//	}
+//	else
 	{
-		struct KernelOptions kernel_options;
-		memset(&kernel_options, 0, sizeof(struct KernelOptions));
+		if (ctx->opt_tex_fmt == HAP_FMT_BPTC && ctx->gpu_encoding_1st_stage) {
+			// https://github.com/GPUOpen-Tools/compressonator/blob/815d1b6fa01223cdbeb3e399e56b44e5c10fcdd7/cmp_compressonatorlib/buffer/codecbuffer_rgba8888.cpp
+			uint8_t* blocks = (uint8_t*)av_malloc(f->linesize[0] * avctx->height);
+			uint8_t* blocks_ptr = blocks;
+			for (j = 0; j < avctx->height; j += 4) {
+				for (i = 0; i < avctx->width; i += 4) {
+					uint8_t* p = f->data[0] + i * 4 + j * f->linesize[0];
+					const int block_size = 16 * 4;
+					const int block_row_size = 4 * 4;
 
-		kernel_options.format = target_foramt_to_compressonator(ctx->opt_tex_fmt);          // Set the format to process
-		kernel_options.fquality = 0.05f;            // Set the quality of the result
-		/// TODO: force using discrete GPU with special global variables
-		kernel_options.encodeWith = CMP_CPU;         // Using OpenCL GPU Encoder, can replace with DXC for DidstMipSetrectX
-		kernel_options.threads = 0;            // Auto setting
-		kernel_options.height = avctx->width;
-		kernel_options.width = avctx->height;
+					memcpy(blocks_ptr, p, block_row_size);
+					memcpy(blocks_ptr + block_row_size, p + f->linesize[0], block_row_size);
+					memcpy(blocks_ptr + block_row_size*2, p + f->linesize[0]*2, block_row_size);
+					memcpy(blocks_ptr + block_row_size*3, p + f->linesize[0]*3, block_row_size);
 
-		/// TODO: inspect srcMipSet and determine what's wrong
-#if 0
-		CMP_MipSet srcMipSet;
-		memset(&srcMipSet, 0, sizeof(CMP_MipSet));
-		//srcMipSet.dwSize = sizeof(srcMipSet);
-		srcMipSet.m_nWidth = avctx->width;
-		srcMipSet.m_nHeight = avctx->height;
-		srcMipSet.m_nDepth = 1;
-		srcMipSet.m_format = CMP_FORMAT_RGBA_8888;
-		srcMipSet.dwDataSize = f->linesize[0] * avctx->height;//CMP_CalculateBufferSize(&srcMipSet); 
-		srcMipSet.pData = (CMP_BYTE*)f->data[0];
+					blocks_ptr += block_size;
+				}
+			}
 
-		srcMipSet.m_Flags = MS_FLAG_Default;
-		srcMipSet.dwWidth = srcMipSet.m_nWidth;
-		srcMipSet.dwHeight = srcMipSet.m_nHeight;
-		srcMipSet.m_ChannelFormat = CF_8bit;
-		srcMipSet.m_dwFourCC = 0;
-		//srcMipSet.m_nMaxMipLevels = pMipSetSRC->m_nMaxMipLevels;
-		srcMipSet.m_nMipLevels = 0;
-		srcMipSet.m_TextureType = TT_2D;
-#endif
-
-		CMP_MipSet dstMipSet;
-		memset(&dstMipSet, 0, sizeof(CMP_MipSet));
-#if 0
-		dstMipSet.m_nWidth = srcMipSet.m_nWidth;
-		dstMipSet.m_nHeight = srcMipSet.m_nHeight;
-		dstMipSet.m_nDepth = 1;
-		dstMipSet.m_format = target_foramt_to_compressonator(ctx->opt_tex_fmt);
-		if (dstMipSet.m_format == CMP_FORMAT_BC7) {
-			av_log(avctx, AV_LOG_WARNING, "CMP_FORMAT_BC7\n");
-		}
-		dstMipSet.dwDataSize = out_length;//CMP_CalculateBufferSize(&dstMipSet); // f->linesize[0] * avctx->height
-		dstMipSet.pData = (CMP_BYTE*)out;
-
-		dstMipSet.m_Flags = MS_FLAG_Default;
-		dstMipSet.dwWidth = dstMipSet.m_nWidth;
-		dstMipSet.dwHeight = dstMipSet.m_nHeight;
-		dstMipSet.m_ChannelFormat = CF_Compressed;
-		dstMipSet.m_nBlockHeight = 4;
-		dstMipSet.m_nBlockWidth = 4;
-		dstMipSet.m_dwFourCC = target_format_to_fourcc(ctx->opt_tex_fmt);
-		//dstMipSet.m_nMaxMipLevels = pMipSetSRC->m_nMaxMipLevels;
-		dstMipSet.m_nMipLevels = 0;
-		dstMipSet.m_TextureType = TT_2D;
-#endif
-		//av_log(avctx, AV_LOG_WARNING, "src datasize: %d; width: %d; height: %d\nout_length: %d\n", srcMipSet.dwDataSize, avctx->width, avctx->height, out_length);
-
-		//CMP_ERROR status = CMP_CompressTexture(&kernel_options, srcMipSet, dstMipSet, NULL);
-		CMP_ERROR status = CMP_ProcessTexture(&srcMipSet, &dstMipSet, kernel_options, NULL);
-		
-		//if (cmp_status == CMP_ERR_FAILED_HOST_SETUP)
-		//{
-		//	g_CmdPrams.CompressOptions.nEncodeWith = CMP_Compute_type::CMP_CPU;
-		//	kernel_options.encodeWith = g_CmdPrams.CompressOptions.nEncodeWith;
-		//	memset(&mipSetCmp, 0, sizeof(CMP_MipSet));
-		//	cmp_status = CMP_ProcessTexture(&inMips, &mipSetCmp, kernel_options, CompressionCallback);
-		//}
-		
-		if (status != CMP_OK) {
-			av_log(avctx, AV_LOG_ERROR, "CMP_CompressTexture error: %d\n", status);
-			return -1;
-		}
-
-		if (!dstMipSet.pData || dstMipSet.dwDataSize != out_length) {
-			//av_log(avctx, AV_LOG_WARNING, "compressonator texture data_size: %d, out_length: %d\n", dstMipSet.dwDataSize, out_length);
-			av_log(avctx, AV_LOG_WARNING, "compressonator texture data: %p\n", dstMipSet.pData);
-			return -1;
-		}
-
-		memcpy(out, dstMipSet.pData, out_length);
-		CMP_FreeMipSet(&dstMipSet);
-
-		//CMP_FreeMipSet(&srcMipSet);
-	}
-	else
-	{
-		if (ctx->opt_tex_fmt == HAP_FMT_BPTC) {
 			int num_blocks = avctx->width * avctx->height / 16;
-			bc7e_compress_blocks(num_blocks, out, f->data[0], &ctx->bc7e_params);
+			bc7e_compress_blocks(num_blocks, out, blocks, &ctx->bc7e_params);
+
+			av_free(blocks);
 		} else {
 			for (j = 0; j < avctx->height; j += 4) {
 				for (i = 0; i < avctx->width; i += 4) {
@@ -454,12 +474,18 @@ static av_cold int hap_init(AVCodecContext *avctx)
     ff_texturedspenc_init(&ctx->dxtc);
     ff_bc7enc16_init(&ctx->bc7c, BC7ENC16_TRUE /* perceptual */, BC7ENC16_MAX_PARTITIONS1 /* max_partitions_to_scan */, 0 /* uber_level */);
 	bc7e_compress_block_init();
+	/// TODO: compare & add 2-3 presets with parameter
 	bc7e_compress_block_params_init_ultrafast(&ctx->bc7e_params, true /* perceptual */);
-	//bc7e_compress_block_params_init_basic();
-	CMP_InitFramework(); // Calls CMP_RegisterHostPlugins()
+	//bc7e_compress_block_params_init_basic(&ctx->bc7e_params, true /* perceptual */);
+	//bc7e_compress_block_params_init_basic(&ctx->bc7e_params, true /* perceptual */);
+	//bc7e_compress_block_params_init_fast(&ctx->bc7e_params, true /* perceptual */);
+	//bc7e_compress_block_params_init_slow(&ctx->bc7e_params, true /* perceptual */);
+	//bc7e_compress_block_params_init_slowest(&ctx->bc7e_params, true /* perceptual */);
+	/*bc7e_compress_block_params_init_veryfast*/(&ctx->bc7e_params, true /* perceptual */);
+	//CMP_InitFramework(); // Calls CMP_RegisterHostPlugins()
 	// CMP_SetComputeOptions: force rebuild shaders
 
-#if 1
+#if 0
 	if (ctx->gpu_encoding_1st_stage)
 	{
 		memset(&srcMipSet, 0, sizeof(CMP_MipSet));
