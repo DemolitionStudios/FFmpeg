@@ -30,6 +30,7 @@
 #include "bytestream.h"
 #include "texturedsp.h"
 #include "bc7enc16.h"
+#include "bc7e_ispc.h"
 
 enum HapTextureFormat {
     HAP_FMT_RGBDXT1   = 0x0B,
@@ -70,6 +71,7 @@ typedef struct HapContext {
     TextureDSPContext dxtc;
     BC7Enc16Context bc7c;
     GetByteContext gbc;
+	bc7e_compress_block_params bc7e_params;
 
     enum HapTextureFormat opt_tex_fmt; /* Texture type (encoder only) */
     int opt_chunk_count; /* User-requested chunk count (encoder only) */

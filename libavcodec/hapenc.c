@@ -33,6 +33,7 @@
 #include "snappy-c.h"
 #include "gdeflate-c.h"
 #include "compressonator.h"
+#include "bc7e_ispc.h"
 
 #include "libavutil/frame.h"
 #include "libavutil/imgutils.h"
@@ -214,11 +215,16 @@ static int compress_texture(AVCodecContext *avctx, uint8_t *out, int out_length,
 	}
 	else
 	{
-		for (j = 0; j < avctx->height; j += 4) {
-			for (i = 0; i < avctx->width; i += 4) {
-				uint8_t* p = f->data[0] + i * 4 + j * f->linesize[0];
-				const int step = ctx->tex_fun(out, f->linesize[0], p);
-				out += step;
+		if (ctx->opt_tex_fmt == HAP_FMT_BPTC) {
+			int num_blocks = avctx->width * avctx->height / 16;
+			bc7e_compress_blocks(num_blocks, out, f->data[0], &ctx->bc7e_params);
+		} else {
+			for (j = 0; j < avctx->height; j += 4) {
+				for (i = 0; i < avctx->width; i += 4) {
+					uint8_t* p = f->data[0] + i * 4 + j * f->linesize[0];
+					const int step = ctx->tex_fun(out, f->linesize[0], p);
+					out += step;
+				}
 			}
 		}
 	}
@@ -306,7 +312,6 @@ static int hap_compress_frame_gdeflate(AVCodecContext* avctx, uint8_t* dst)
 	int i;
 	size_t final_size = ctx->max_compressed;
 
-    /// TODO: fix decreasing fps
     /* GDeflate compression directly to the packet buffer. */
     //av_log(avctx, AV_LOG_WARNING, "GDeflate max size: %d\n", final_size);
     bool ok = gdeflate_compress(dst, &final_size, ctx->tex_buf, ctx->tex_size, GDEFLATE_COMPRESSION_LEVEL, 0, GDEFLATE_NUM_THREADS);
@@ -448,8 +453,10 @@ static av_cold int hap_init(AVCodecContext *avctx)
 
     ff_texturedspenc_init(&ctx->dxtc);
     ff_bc7enc16_init(&ctx->bc7c, BC7ENC16_TRUE /* perceptual */, BC7ENC16_MAX_PARTITIONS1 /* max_partitions_to_scan */, 0 /* uber_level */);
-	//CMP_RegisterHostPlugins();
-	CMP_InitFramework();
+	bc7e_compress_block_init();
+	bc7e_compress_block_params_init_ultrafast(&ctx->bc7e_params, true /* perceptual */);
+	//bc7e_compress_block_params_init_basic();
+	CMP_InitFramework(); // Calls CMP_RegisterHostPlugins()
 	// CMP_SetComputeOptions: force rebuild shaders
 
 #if 1
@@ -603,14 +610,15 @@ static av_cold int hap_close(AVCodecContext *avctx)
       https ://github.com/BinomialLLC/bc7e
       https ://github.com/richgel999/bc7enc
       https ://github.com/richgel999/bc7enc16
+	  https://github.com/aras-p/bc7e-on-gpu
       https ://www.phoronix.com/news/OSS-Game-Industry-Concerns
       https ://twitter.com/richgel999/status/1454580043607334915
       https ://github.com/walbourn/directx-sdk-samples/tree/main/BC6HBC7EncoderCS
       https ://github.com/mvji/SPX-GC
 
-  2. Try lossless texture compression
-  3. NotchLC capture shaders with PIX
-  4. Uncompressed YUV format - good for gdeflate probably (planar)
+  2. Try lossless texture compression: uncompressed YUV format - good for gdeflate probably (planar)
+  3. Fix decreasing fps (initial probe loads 5s of input video)
+  4. NotchLC capture shaders with PIX
   */
 
 #define OFFSET(x) offsetof(HapContext, x)
@@ -622,7 +630,7 @@ static const AVOption options[] = {
         { "hap_q",     "Hap Q (DXT5-YCoCg textures)", 0, AV_OPT_TYPE_CONST, {.i64 = HAP_FMT_YCOCGDXT5 }, 0, 0, FLAGS, "format" },
         { "hap_r",     "Hap R (BC7 textures)", 0, AV_OPT_TYPE_CONST, {.i64 = HAP_FMT_BPTC }, 0, 0, FLAGS, "format" },
     { "chunks", "chunk count", OFFSET(opt_chunk_count), AV_OPT_TYPE_INT, {.i64 = 1 }, -1, HAP_SNAPPY_MAX_CHUNKS, FLAGS, },
-	{ "gpu_encoding_1st_stage", "enable gpu encoding (1st stage)", OFFSET(gpu_encoding_1st_stage), AV_OPT_TYPE_BOOL, {.i64 = 1 }, 0, 1, FLAGS, },
+	{ "gpu_encoding_1st_stage", "enable gpu encoding (1st stage)", OFFSET(gpu_encoding_1st_stage), AV_OPT_TYPE_BOOL, {.i64 = 0 }, 0, 1, FLAGS, },
 	{ "compressor", "second-stage compressor", OFFSET(opt_compressor), AV_OPT_TYPE_INT, { .i64 = HAP_COMP_SNAPPY }, HAP_COMP_NONE, HAP_COMP_GDEFLATE, FLAGS, "compressor" },
         { "none",       "None", 0, AV_OPT_TYPE_CONST, { .i64 = HAP_COMP_NONE }, 0, 0, FLAGS, "compressor" },
         { "snappy",     "Snappy", 0, AV_OPT_TYPE_CONST, { .i64 = HAP_COMP_SNAPPY }, 0, 0, FLAGS, "compressor" },
