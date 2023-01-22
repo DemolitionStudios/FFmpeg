@@ -49,7 +49,6 @@
 #define HAP_SNAPPY_MAX_CHUNKS 64
 #define HAP_SNAPPY_FIXED_CHUNK_SIZE 65536
 
-#define GDEFLATE_COMPRESSION_LEVEL GDeflateMinimumCompressionLevel // GDeflateMaximumCompressionLevel
 #define GDEFLATE_NUM_THREADS 32
 
 // Setup Static Host Pluging Libs
@@ -124,7 +123,7 @@ static int compress_texture(AVCodecContext *avctx, uint8_t *out, int out_length,
     if (ctx->tex_size > out_length)
         return AVERROR_BUFFER_TOO_SMALL;
 
-	/// TODO: alternate between CPU / GPU compress threads to utilize both
+	/// TODO: alternate between CPU / GPU compress threads to utilize both (not a good idea probably, as the encoding algorithm will differ)
 //	if (ctx->gpu_encoding_1st_stage)
 //	{
 //		struct KernelOptions kernel_options;
@@ -215,13 +214,17 @@ static int compress_texture(AVCodecContext *avctx, uint8_t *out, int out_length,
 //	}
 //	else
 	{
+		/// TODO: cpu isn't used at 100% now even with 64 threads. Wtf??
 		if (ctx->opt_tex_fmt == HAP_FMT_BPTC && ctx->gpu_encoding_1st_stage) {
 			// https://github.com/GPUOpen-Tools/compressonator/blob/815d1b6fa01223cdbeb3e399e56b44e5c10fcdd7/cmp_compressonatorlib/buffer/codecbuffer_rgba8888.cpp
+			/// TODO: make a special "color space" for it. so we transform directly from 420p->blocks
+			/// TODO: or in-place conversion to save memory while using threads, cache only transformed 4-pixel rows
+			/// TODO: + maybe use memory pool for the cached 4-pixel rows
 			uint8_t* blocks = (uint8_t*)av_malloc(f->linesize[0] * avctx->height);
 			uint8_t* blocks_ptr = blocks;
 			for (j = 0; j < avctx->height; j += 4) {
 				for (i = 0; i < avctx->width; i += 4) {
-					uint8_t* p = f->data[0] + i * 4 + j * f->linesize[0];
+					const uint8_t* p = f->data[0] + i * 4 + j * f->linesize[0];
 					const int block_size = 16 * 4;
 					const int block_row_size = 4 * 4;
 
@@ -239,6 +242,7 @@ static int compress_texture(AVCodecContext *avctx, uint8_t *out, int out_length,
 
 			av_free(blocks);
 		} else {
+			/// TODO: use https://github.com/richgel999/bc7enc_rdo (faster + better quality + optimized for lossless compression)
 			for (j = 0; j < avctx->height; j += 4) {
 				for (i = 0; i < avctx->width; i += 4) {
 					uint8_t* p = f->data[0] + i * 4 + j * f->linesize[0];
@@ -334,7 +338,7 @@ static int hap_compress_frame_gdeflate(AVCodecContext* avctx, uint8_t* dst)
 
     /* GDeflate compression directly to the packet buffer. */
     //av_log(avctx, AV_LOG_WARNING, "GDeflate max size: %d\n", final_size);
-    bool ok = gdeflate_compress(dst, &final_size, ctx->tex_buf, ctx->tex_size, GDEFLATE_COMPRESSION_LEVEL, 0, GDEFLATE_NUM_THREADS);
+    bool ok = gdeflate_compress(dst, &final_size, ctx->tex_buf, ctx->tex_size, ctx->opt_gdeflate_level, 0, GDEFLATE_NUM_THREADS);
     //av_log(avctx, AV_LOG_WARNING, "GDeflate final size: %d\n", final_size);
     if (!ok) {
         av_log(avctx, AV_LOG_ERROR, "GDeflate compress error.\n");
@@ -656,6 +660,7 @@ static const AVOption options[] = {
         { "hap_q",     "Hap Q (DXT5-YCoCg textures)", 0, AV_OPT_TYPE_CONST, {.i64 = HAP_FMT_YCOCGDXT5 }, 0, 0, FLAGS, "format" },
         { "hap_r",     "Hap R (BC7 textures)", 0, AV_OPT_TYPE_CONST, {.i64 = HAP_FMT_BPTC }, 0, 0, FLAGS, "format" },
     { "chunks", "chunk count", OFFSET(opt_chunk_count), AV_OPT_TYPE_INT, {.i64 = 1 }, -1, HAP_SNAPPY_MAX_CHUNKS, FLAGS, },
+	{ "gdeflate_level", "GDeflate compression level", OFFSET(opt_gdeflate_level), AV_OPT_TYPE_INT, {.i64 = GDeflateMinimumCompressionLevel }, GDeflateMinimumCompressionLevel, GDeflateMaximumCompressionLevel, FLAGS, },
 	{ "gpu_encoding_1st_stage", "enable gpu encoding (1st stage)", OFFSET(gpu_encoding_1st_stage), AV_OPT_TYPE_BOOL, {.i64 = 0 }, 0, 1, FLAGS, },
 	{ "compressor", "second-stage compressor", OFFSET(opt_compressor), AV_OPT_TYPE_INT, { .i64 = HAP_COMP_SNAPPY }, HAP_COMP_NONE, HAP_COMP_GDEFLATE, FLAGS, "compressor" },
         { "none",       "None", 0, AV_OPT_TYPE_CONST, { .i64 = HAP_COMP_NONE }, 0, 0, FLAGS, "compressor" },
@@ -683,6 +688,7 @@ AVCodec ff_hap_encoder = {
 	.capabilities   = AV_CODEC_CAP_FRAME_THREADS | AV_CODEC_CAP_INTRA_ONLY,
     .close          = hap_close,
     .pix_fmts       = (const enum AVPixelFormat[]) {
+		/// TODO: No accelerated colorspace conversion found from yuv420p to rgba
         AV_PIX_FMT_RGBA, AV_PIX_FMT_NONE,
     },
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE |
