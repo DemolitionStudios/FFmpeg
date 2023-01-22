@@ -46,9 +46,9 @@ static void check_add_bytes(LLVidDSPContext c, int width)
 {
     uint8_t *dst0 = av_mallocz(width);
     uint8_t *dst1 = av_mallocz(width);
-    uint8_t *src0 = av_mallocz_array(width, sizeof(uint8_t));
-    uint8_t *src1 = av_mallocz_array(width, sizeof(uint8_t));
-    declare_func_emms(AV_CPU_FLAG_MMX, void, uint8_t *dst, uint8_t *src, ptrdiff_t w);
+    uint8_t *src0 = av_calloc(width, sizeof(*src0));
+    uint8_t *src1 = av_calloc(width, sizeof(*src1));
+    declare_func(void, uint8_t *dst, uint8_t *src, ptrdiff_t w);
 
     init_buffer(src0, src1, uint8_t, width);
 
@@ -74,13 +74,13 @@ static void check_add_median_pred(LLVidDSPContext c, int width) {
     int A0, A1, B0, B1;
     uint8_t *dst0 = av_mallocz(width);
     uint8_t *dst1 = av_mallocz(width);
-    uint8_t *src0 = av_mallocz_array(width, sizeof(uint8_t));
-    uint8_t *src1 = av_mallocz_array(width, sizeof(uint8_t));
-    uint8_t *diff0 = av_mallocz_array(width, sizeof(uint8_t));
-    uint8_t *diff1 = av_mallocz_array(width, sizeof(uint8_t));
-    declare_func_emms(AV_CPU_FLAG_MMX, void, uint8_t *dst, const uint8_t *src1,
-                      const uint8_t *diff, ptrdiff_t w,
-                      int *left, int *left_top);
+    uint8_t *src0  = av_calloc(width, sizeof(*src0));
+    uint8_t *src1  = av_calloc(width, sizeof(*src1));
+    uint8_t *diff0 = av_calloc(width, sizeof(*diff0));
+    uint8_t *diff1 = av_calloc(width, sizeof(*diff1));
+    declare_func(void, uint8_t *dst, const uint8_t *src1,
+                 const uint8_t *diff, ptrdiff_t w,
+                 int *left, int *left_top);
 
     init_buffer(src0, src1, uint8_t, width);
     init_buffer(diff0, diff1, uint8_t, width);
@@ -112,9 +112,9 @@ static void check_add_left_pred(LLVidDSPContext c, int width, int acc, const cha
     int res0, res1;
     uint8_t *dst0 = av_mallocz(width);
     uint8_t *dst1 = av_mallocz(width);
-    uint8_t *src0 = av_mallocz_array(width, sizeof(uint8_t));
-    uint8_t *src1 = av_mallocz_array(width, sizeof(uint8_t));
-    declare_func_emms(AV_CPU_FLAG_MMX, int, uint8_t *dst, uint8_t *src, ptrdiff_t w, int acc);
+    uint8_t *src0 = av_calloc(width, sizeof(*src0));
+    uint8_t *src1 = av_calloc(width, sizeof(*src1));
+    declare_func(int, uint8_t *dst, uint8_t *src, ptrdiff_t w, int acc);
 
     init_buffer(src0, src1, uint8_t, width);
 
@@ -139,11 +139,11 @@ static void check_add_left_pred(LLVidDSPContext c, int width, int acc, const cha
 static void check_add_left_pred_16(LLVidDSPContext c, unsigned mask, int width, unsigned acc, const char * report)
 {
     int res0, res1;
-    uint16_t *dst0 = av_mallocz_array(width, sizeof(uint16_t));
-    uint16_t *dst1 = av_mallocz_array(width, sizeof(uint16_t));
-    uint16_t *src0 = av_mallocz_array(width, sizeof(uint16_t));
-    uint16_t *src1 = av_mallocz_array(width, sizeof(uint16_t));
-    declare_func_emms(AV_CPU_FLAG_MMX, int, uint16_t *dst, uint16_t *src, unsigned mask, ptrdiff_t w, unsigned acc);
+    uint16_t *dst0 = av_calloc(width, sizeof(*dst0));
+    uint16_t *dst1 = av_calloc(width, sizeof(*dst1));
+    uint16_t *src0 = av_calloc(width, sizeof(*src0));
+    uint16_t *src1 = av_calloc(width, sizeof(*src1));
+    declare_func(int, uint16_t *dst, uint16_t *src, unsigned mask, ptrdiff_t w, unsigned acc);
 
     init_buffer(src0, src1, uint16_t, width);
 
@@ -168,8 +168,8 @@ static void check_add_left_pred_16(LLVidDSPContext c, unsigned mask, int width, 
 static void check_add_gradient_pred(LLVidDSPContext c, int w) {
     int src_size, stride;
     uint8_t *src0, *src1;
-    declare_func_emms(AV_CPU_FLAG_MMX, void, uint8_t *src, const ptrdiff_t stride,
-                      const ptrdiff_t width);
+    declare_func(void, uint8_t *src, const ptrdiff_t stride,
+                 const ptrdiff_t width);
 
     stride = w + 32;
     src_size = (stride + 32) * 2; /* dsp need previous line, and ignore the start of the line */

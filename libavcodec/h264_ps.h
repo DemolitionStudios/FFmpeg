@@ -33,6 +33,7 @@
 #include "avcodec.h"
 #include "get_bits.h"
 #include "h264.h"
+#include "h2645_vui.h"
 
 #define MAX_SPS_COUNT          32
 #define MAX_PPS_COUNT         256
@@ -70,13 +71,8 @@ typedef struct SPS {
     unsigned int crop_top;             ///< frame_cropping_rect_top_offset
     unsigned int crop_bottom;          ///< frame_cropping_rect_bottom_offset
     int vui_parameters_present_flag;
-    AVRational sar;
-    int video_signal_type_present_flag;
-    int full_range;
-    int colour_description_present_flag;
-    enum AVColorPrimaries color_primaries;
-    enum AVColorTransferCharacteristic color_trc;
-    enum AVColorSpace colorspace;
+    H2645VUI vui;
+
     int timing_info_present_flag;
     uint32_t num_units_in_tick;
     uint32_t time_scale;
@@ -133,6 +129,9 @@ typedef struct PPS {
     uint32_t dequant8_buffer[6][QP_MAX_NUM + 1][64];
     uint32_t(*dequant4_coeff[6])[16];
     uint32_t(*dequant8_coeff[6])[64];
+
+    AVBufferRef *sps_ref;
+    const SPS   *sps;
 } PPS;
 
 typedef struct H264ParamSets {
@@ -140,11 +139,17 @@ typedef struct H264ParamSets {
     AVBufferRef *pps_list[MAX_PPS_COUNT];
 
     AVBufferRef *pps_ref;
-    AVBufferRef *sps_ref;
     /* currently active parameters sets */
     const PPS *pps;
     const SPS *sps;
+
+    int overread_warning_printed[2];
 } H264ParamSets;
+
+/**
+ * compute profile from sps
+ */
+int ff_h264_get_profile(const SPS *sps);
 
 /**
  * Decode SPS

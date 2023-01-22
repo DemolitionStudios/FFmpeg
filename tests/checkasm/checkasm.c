@@ -21,6 +21,7 @@
  */
 
 #include "config.h"
+#include "config_components.h"
 
 #if CONFIG_LINUX_PERF
 # ifndef _GNU_SOURCE
@@ -42,7 +43,7 @@
 #include <io.h>
 #endif
 
-#if HAVE_SETCONSOLETEXTATTRIBUTE
+#if HAVE_SETCONSOLETEXTATTRIBUTE && HAVE_GETSTDHANDLE
 #include <windows.h>
 #define COLOR_RED    FOREGROUND_RED
 #define COLOR_GREEN  FOREGROUND_GREEN
@@ -95,7 +96,7 @@ static const struct {
     #if CONFIG_EXR_DECODER
         { "exrdsp", checkasm_check_exrdsp },
     #endif
-    #if CONFIG_FLACDSP
+    #if CONFIG_FLAC_DECODER
         { "flacdsp", checkasm_check_flacdsp },
     #endif
     #if CONFIG_FMTCONVERT
@@ -116,10 +117,14 @@ static const struct {
     #if CONFIG_HEVC_DECODER
         { "hevc_add_res", checkasm_check_hevc_add_res },
         { "hevc_idct", checkasm_check_hevc_idct },
+        { "hevc_pel", checkasm_check_hevc_pel },
         { "hevc_sao", checkasm_check_hevc_sao },
     #endif
     #if CONFIG_HUFFYUV_DECODER
         { "huffyuvdsp", checkasm_check_huffyuvdsp },
+    #endif
+    #if CONFIG_IDCTDSP
+        { "idctdsp", checkasm_check_idctdsp },
     #endif
     #if CONFIG_JPEG2000_DECODER
         { "jpeg2000dsp", checkasm_check_jpeg2000dsp },
@@ -129,6 +134,12 @@ static const struct {
     #endif
     #if CONFIG_LLVIDENCDSP
         { "llviddspenc", checkasm_check_llviddspenc },
+    #endif
+    #if CONFIG_LPC
+        { "lpc", checkasm_check_lpc },
+    #endif
+    #if CONFIG_ME_CMP
+        { "motion", checkasm_check_motion },
     #endif
     #if CONFIG_OPUS_DECODER
         { "opusdsp", checkasm_check_opusdsp },
@@ -145,6 +156,9 @@ static const struct {
     #if CONFIG_V210_ENCODER
         { "v210enc", checkasm_check_v210enc },
     #endif
+    #if CONFIG_VC1DSP
+        { "vc1dsp", checkasm_check_vc1dsp },
+    #endif
     #if CONFIG_VP8DSP
         { "vp8dsp", checkasm_check_vp8dsp },
     #endif
@@ -153,6 +167,9 @@ static const struct {
     #endif
     #if CONFIG_VIDEODSP
         { "videodsp", checkasm_check_videodsp },
+    #endif
+    #if CONFIG_VORBIS_DECODER
+        { "vorbisdsp", checkasm_check_vorbisdsp },
     #endif
 #endif
 #if CONFIG_AVFILTER
@@ -180,13 +197,19 @@ static const struct {
     #if CONFIG_THRESHOLD_FILTER
         { "vf_threshold", checkasm_check_vf_threshold },
     #endif
+    #if CONFIG_SOBEL_FILTER
+        { "vf_sobel", checkasm_check_vf_sobel },
+    #endif
 #endif
 #if CONFIG_SWSCALE
+    { "sw_gbrp", checkasm_check_sw_gbrp },
     { "sw_rgb", checkasm_check_sw_rgb },
+    { "sw_scale", checkasm_check_sw_scale },
 #endif
 #if CONFIG_AVUTIL
         { "fixed_dsp", checkasm_check_fixed_dsp },
         { "float_dsp", checkasm_check_float_dsp },
+        { "av_tx",     checkasm_check_av_tx },
 #endif
     { NULL }
 };
@@ -212,24 +235,40 @@ static const struct {
     { "ALTIVEC",  "altivec",  AV_CPU_FLAG_ALTIVEC },
     { "VSX",      "vsx",      AV_CPU_FLAG_VSX },
     { "POWER8",   "power8",   AV_CPU_FLAG_POWER8 },
+#elif ARCH_RISCV
+    { "RVI",      "rvi",      AV_CPU_FLAG_RVI },
+    { "RVF",      "rvf",      AV_CPU_FLAG_RVF },
+    { "RVD",      "rvd",      AV_CPU_FLAG_RVD },
+    { "RVVi32",   "rvv_i32",  AV_CPU_FLAG_RVV_I32 },
+    { "RVVf32",   "rvv_f32",  AV_CPU_FLAG_RVV_F32 },
+    { "RVVi64",   "rvv_i64",  AV_CPU_FLAG_RVV_I64 },
+    { "RVVf64",   "rvv_f64",  AV_CPU_FLAG_RVV_F64 },
+    { "RVBbasic", "rvb_b",    AV_CPU_FLAG_RVB_BASIC },
+#elif ARCH_MIPS
+    { "MMI",      "mmi",      AV_CPU_FLAG_MMI },
+    { "MSA",      "msa",      AV_CPU_FLAG_MSA },
 #elif ARCH_X86
-    { "MMX",      "mmx",      AV_CPU_FLAG_MMX|AV_CPU_FLAG_CMOV },
-    { "MMXEXT",   "mmxext",   AV_CPU_FLAG_MMXEXT },
-    { "3DNOW",    "3dnow",    AV_CPU_FLAG_3DNOW },
-    { "3DNOWEXT", "3dnowext", AV_CPU_FLAG_3DNOWEXT },
-    { "SSE",      "sse",      AV_CPU_FLAG_SSE },
-    { "SSE2",     "sse2",     AV_CPU_FLAG_SSE2|AV_CPU_FLAG_SSE2SLOW },
-    { "SSE3",     "sse3",     AV_CPU_FLAG_SSE3|AV_CPU_FLAG_SSE3SLOW },
-    { "SSSE3",    "ssse3",    AV_CPU_FLAG_SSSE3|AV_CPU_FLAG_ATOM },
-    { "SSE4.1",   "sse4",     AV_CPU_FLAG_SSE4 },
-    { "SSE4.2",   "sse42",    AV_CPU_FLAG_SSE42 },
-    { "AES-NI",   "aesni",    AV_CPU_FLAG_AESNI },
-    { "AVX",      "avx",      AV_CPU_FLAG_AVX },
-    { "XOP",      "xop",      AV_CPU_FLAG_XOP },
-    { "FMA3",     "fma3",     AV_CPU_FLAG_FMA3 },
-    { "FMA4",     "fma4",     AV_CPU_FLAG_FMA4 },
-    { "AVX2",     "avx2",     AV_CPU_FLAG_AVX2 },
-    { "AVX-512",  "avx512",   AV_CPU_FLAG_AVX512 },
+    { "MMX",        "mmx",       AV_CPU_FLAG_MMX|AV_CPU_FLAG_CMOV },
+    { "MMXEXT",     "mmxext",    AV_CPU_FLAG_MMXEXT },
+    { "3DNOW",      "3dnow",     AV_CPU_FLAG_3DNOW },
+    { "3DNOWEXT",   "3dnowext",  AV_CPU_FLAG_3DNOWEXT },
+    { "SSE",        "sse",       AV_CPU_FLAG_SSE },
+    { "SSE2",       "sse2",      AV_CPU_FLAG_SSE2|AV_CPU_FLAG_SSE2SLOW },
+    { "SSE3",       "sse3",      AV_CPU_FLAG_SSE3|AV_CPU_FLAG_SSE3SLOW },
+    { "SSSE3",      "ssse3",     AV_CPU_FLAG_SSSE3|AV_CPU_FLAG_ATOM },
+    { "SSE4.1",     "sse4",      AV_CPU_FLAG_SSE4 },
+    { "SSE4.2",     "sse42",     AV_CPU_FLAG_SSE42 },
+    { "AES-NI",     "aesni",     AV_CPU_FLAG_AESNI },
+    { "AVX",        "avx",       AV_CPU_FLAG_AVX },
+    { "XOP",        "xop",       AV_CPU_FLAG_XOP },
+    { "FMA3",       "fma3",      AV_CPU_FLAG_FMA3 },
+    { "FMA4",       "fma4",      AV_CPU_FLAG_FMA4 },
+    { "AVX2",       "avx2",      AV_CPU_FLAG_AVX2 },
+    { "AVX-512",    "avx512",    AV_CPU_FLAG_AVX512 },
+    { "AVX-512ICL", "avx512icl", AV_CPU_FLAG_AVX512ICL },
+#elif ARCH_LOONGARCH
+    { "LSX",      "lsx",      AV_CPU_FLAG_LSX },
+    { "LASX",     "lasx",     AV_CPU_FLAG_LASX },
 #endif
     { NULL }
 };
@@ -268,6 +307,7 @@ static struct {
     int cpu_flag;
     const char *cpu_flag_name;
     const char *test_name;
+    int verbose;
 } state;
 
 /* PRNG state */
@@ -374,7 +414,7 @@ static void color_printf(int color, const char *fmt, ...)
     static int use_color = -1;
     va_list arg;
 
-#if HAVE_SETCONSOLETEXTATTRIBUTE
+#if HAVE_SETCONSOLETEXTATTRIBUTE && HAVE_GETSTDHANDLE
     static HANDLE con;
     static WORD org_attributes;
 
@@ -403,7 +443,7 @@ static void color_printf(int color, const char *fmt, ...)
     va_end(arg);
 
     if (use_color) {
-#if HAVE_SETCONSOLETEXTATTRIBUTE
+#if HAVE_SETCONSOLETEXTATTRIBUTE && HAVE_GETSTDHANDLE
         SetConsoleTextAttribute(con, org_attributes);
 #else
         fprintf(stderr, "\x1b[0m");
@@ -622,9 +662,13 @@ static int bench_init_linux(void)
     }
     return 0;
 }
-#endif
-
-#if !CONFIG_LINUX_PERF
+#elif CONFIG_MACOS_KPERF
+static int bench_init_kperf(void)
+{
+    ff_kperf_init();
+    return 0;
+}
+#else
 static int bench_init_ffmpeg(void)
 {
 #ifdef AV_READ_TIME
@@ -641,6 +685,8 @@ static int bench_init(void)
 {
 #if CONFIG_LINUX_PERF
     int ret = bench_init_linux();
+#elif CONFIG_MACOS_KPERF
+    int ret = bench_init_kperf();
 #else
     int ret = bench_init_ffmpeg();
 #endif
@@ -686,6 +732,8 @@ int main(int argc, char *argv[])
                 state.bench_pattern = "";
         } else if (!strncmp(argv[1], "--test=", 7)) {
             state.test_name = argv[1] + 7;
+        } else if (!strcmp(argv[1], "--verbose") || !strcmp(argv[1], "-v")) {
+            state.verbose = 1;
         } else {
             seed = strtoul(argv[1], NULL, 10);
         }
@@ -836,3 +884,43 @@ void checkasm_report(const char *name, ...)
             max_length = length;
     }
 }
+
+#define DEF_CHECKASM_CHECK_FUNC(type, fmt) \
+int checkasm_check_##type(const char *const file, const int line, \
+                          const type *buf1, ptrdiff_t stride1, \
+                          const type *buf2, ptrdiff_t stride2, \
+                          const int w, int h, const char *const name) \
+{ \
+    int y = 0; \
+    stride1 /= sizeof(*buf1); \
+    stride2 /= sizeof(*buf2); \
+    for (y = 0; y < h; y++) \
+        if (memcmp(&buf1[y*stride1], &buf2[y*stride2], w*sizeof(*buf1))) \
+            break; \
+    if (y == h) \
+        return 0; \
+    checkasm_fail_func("%s:%d", file, line); \
+    if (!state.verbose) \
+        return 1; \
+    fprintf(stderr, "%s:\n", name); \
+    while (h--) { \
+        for (int x = 0; x < w; x++) \
+            fprintf(stderr, " " fmt, buf1[x]); \
+        fprintf(stderr, "    "); \
+        for (int x = 0; x < w; x++) \
+            fprintf(stderr, " " fmt, buf2[x]); \
+        fprintf(stderr, "    "); \
+        for (int x = 0; x < w; x++) \
+            fprintf(stderr, "%c", buf1[x] != buf2[x] ? 'x' : '.'); \
+        buf1 += stride1; \
+        buf2 += stride2; \
+        fprintf(stderr, "\n"); \
+    } \
+    return 1; \
+}
+
+DEF_CHECKASM_CHECK_FUNC(uint8_t,  "%02x")
+DEF_CHECKASM_CHECK_FUNC(uint16_t, "%04x")
+DEF_CHECKASM_CHECK_FUNC(uint32_t, "%08x")
+DEF_CHECKASM_CHECK_FUNC(int16_t,  "%6d")
+DEF_CHECKASM_CHECK_FUNC(int32_t,  "%9d")

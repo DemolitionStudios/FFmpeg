@@ -77,7 +77,6 @@ static int write_header(AVFormatContext *s)
             avio_printf(s->pb, "[Events]\r\nFormat: %s, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\r\n",
                         ass->ssa_mode ? "Marked" : "Layer");
     }
-    avio_flush(s->pb);
 
     return 0;
 }
@@ -227,7 +226,7 @@ static const AVClass ass_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-AVOutputFormat ff_ass_muxer = {
+const AVOutputFormat ff_ass_muxer = {
     .name           = "ass",
     .long_name      = NULL_IF_CONFIG_SMALL("SSA (SubStation Alpha) subtitle"),
     .mime_type      = "text/x-ass",

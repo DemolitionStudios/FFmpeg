@@ -58,10 +58,22 @@
 #define SIT_PID         0x001F /* Selection Information Table */
 /* PID from 0x0020 to 0x1FFA may be assigned as needed to PMT, elementary
  * streams and other data tables */
+#define FIRST_OTHER_PID 0x0020
+#define  LAST_OTHER_PID 0x1FFA
 /* PID 0x1FFB is used by DigiCipher 2/ATSC MGT metadata */
 /* PID from 0x1FFC to 0x1FFE may be assigned as needed to PMT, elementary
  * streams and other data tables */
 #define NULL_PID        0x1FFF /* Null packet (used for fixed bandwidth padding) */
+
+/* m2ts pids */
+#define M2TS_PMT_PID                      0x0100
+#define M2TS_PCR_PID                      0x1001
+#define M2TS_VIDEO_PID                    0x1011
+#define M2TS_AUDIO_START_PID              0x1100
+#define M2TS_PGSSUB_START_PID             0x1200
+#define M2TS_TEXTSUB_PID                  0x1800
+#define M2TS_SECONDARY_AUDIO_START_PID    0x1A00
+#define M2TS_SECONDARY_VIDEO_START_PID    0x1B00
 
 /* table ids */
 #define PAT_TID         0x00 /* Program Association section */
@@ -117,6 +129,8 @@
 #define STREAM_TYPE_VIDEO_H264      0x1b
 #define STREAM_TYPE_VIDEO_HEVC      0x24
 #define STREAM_TYPE_VIDEO_CAVS      0x42
+#define STREAM_TYPE_VIDEO_AVS2      0xd2
+#define STREAM_TYPE_VIDEO_AVS3      0xd4
 #define STREAM_TYPE_VIDEO_VC1       0xea
 #define STREAM_TYPE_VIDEO_DIRAC     0xd1
 
@@ -124,6 +138,31 @@
 #define STREAM_TYPE_AUDIO_DTS       0x82
 #define STREAM_TYPE_AUDIO_TRUEHD    0x83
 #define STREAM_TYPE_AUDIO_EAC3      0x87
+
+/* ISO/IEC 13818-1 Table 2-22 */
+#define STREAM_ID_PROGRAM_STREAM_MAP        0xbc
+#define STREAM_ID_PRIVATE_STREAM_1          0xbd
+#define STREAM_ID_PADDING_STREAM            0xbe
+#define STREAM_ID_PRIVATE_STREAM_2          0xbf
+#define STREAM_ID_AUDIO_STREAM_0            0xc0
+#define STREAM_ID_VIDEO_STREAM_0            0xe0
+#define STREAM_ID_ECM_STREAM                0xf0
+#define STREAM_ID_EMM_STREAM                0xf1
+#define STREAM_ID_DSMCC_STREAM              0xf2
+#define STREAM_ID_TYPE_E_STREAM             0xf8
+#define STREAM_ID_METADATA_STREAM           0xfc
+#define STREAM_ID_EXTENDED_STREAM_ID        0xfd
+#define STREAM_ID_PROGRAM_STREAM_DIRECTORY  0xff
+
+/* ISO/IEC 13818-1 Table 2-45 */
+#define VIDEO_STREAM_DESCRIPTOR      0x02
+#define REGISTRATION_DESCRIPTOR      0x05
+#define ISO_639_LANGUAGE_DESCRIPTOR  0x0a
+#define IOD_DESCRIPTOR               0x1d
+#define SL_DESCRIPTOR                0x1e
+#define FMC_DESCRIPTOR               0x1f
+#define METADATA_DESCRIPTOR          0x26
+#define METADATA_STD_DESCRIPTOR      0x27
 
 typedef struct MpegTSContext MpegTSContext;
 
@@ -155,6 +194,22 @@ typedef struct Mp4Descr {
     uint8_t *dec_config_descr;
     SLConfigDescr sl;
 } Mp4Descr;
+
+/*
+ * ETSI 300 468 descriptor 0x6A(AC-3)
+ * Refer to: ETSI EN 300 468 V1.11.1 (2010-04) (SI in DVB systems)
+ */
+typedef struct DVBAC3Descriptor {
+    uint8_t  component_type_flag;
+    uint8_t  bsid_flag;
+    uint8_t  mainid_flag;
+    uint8_t  asvc_flag;
+    uint8_t  reserved_flags;
+    uint8_t  component_type;
+    uint8_t  bsid;
+    uint8_t  mainid;
+    uint8_t  asvc;
+} DVBAC3Descriptor;
 
 /**
  * Parse an MPEG-2 descriptor

@@ -1,4 +1,4 @@
-EXAMPLES-$(CONFIG_AVIO_DIR_CMD_EXAMPLE)      += avio_dir_cmd
+EXAMPLES-$(CONFIG_AVIO_LIST_DIR_EXAMPLE)     += avio_list_dir
 EXAMPLES-$(CONFIG_AVIO_READING_EXAMPLE)      += avio_reading
 EXAMPLES-$(CONFIG_DECODE_AUDIO_EXAMPLE)      += decode_audio
 EXAMPLES-$(CONFIG_DECODE_VIDEO_EXAMPLE)      += decode_video
@@ -21,6 +21,7 @@ EXAMPLES-$(CONFIG_TRANSCODE_AAC_EXAMPLE)     += transcode_aac
 EXAMPLES-$(CONFIG_TRANSCODING_EXAMPLE)       += transcoding
 EXAMPLES-$(CONFIG_VAAPI_ENCODE_EXAMPLE)      += vaapi_encode
 EXAMPLES-$(CONFIG_VAAPI_TRANSCODE_EXAMPLE)   += vaapi_transcode
+EXAMPLES-$(CONFIG_QSV_TRANSCODE_EXAMPLE)     += qsv_transcode
 
 EXAMPLES       := $(EXAMPLES-yes:%=doc/examples/%$(PROGSSUF)$(EXESUF))
 EXAMPLES_G     := $(EXAMPLES-yes:%=doc/examples/%$(PROGSSUF)_g$(EXESUF))

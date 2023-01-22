@@ -34,7 +34,7 @@
 #define SUBSCRIPTS(subs, ...) (subs > 0 ? ((int[subs + 1]){ subs, __VA_ARGS__ }) : NULL)
 
 #define u(width, name, range_min, range_max) \
-    xu(width, name, range_min, range_max, 0)
+    xu(width, name, range_min, range_max, 0, )
 #define us(width, name, sub, range_min, range_max) \
     xu(width, name, range_min, range_max, 1, sub)
 
@@ -82,27 +82,6 @@
 #undef xu
 
 
-static void cbs_jpeg_free_application_data(void *opaque, uint8_t *content)
-{
-    JPEGRawApplicationData *ad = (JPEGRawApplicationData*)content;
-    av_buffer_unref(&ad->Ap_ref);
-    av_freep(&content);
-}
-
-static void cbs_jpeg_free_comment(void *opaque, uint8_t *content)
-{
-    JPEGRawComment *comment = (JPEGRawComment*)content;
-    av_buffer_unref(&comment->Cm_ref);
-    av_freep(&content);
-}
-
-static void cbs_jpeg_free_scan(void *opaque, uint8_t *content)
-{
-    JPEGRawScan *scan = (JPEGRawScan*)content;
-    av_buffer_unref(&scan->data_ref);
-    av_freep(&content);
-}
-
 static int cbs_jpeg_split_fragment(CodedBitstreamContext *ctx,
                                    CodedBitstreamFragment *frag,
                                    int header)
@@ -110,7 +89,7 @@ static int cbs_jpeg_split_fragment(CodedBitstreamContext *ctx,
     AVBufferRef *data_ref;
     uint8_t *data;
     size_t data_size;
-    int unit, start, end, marker, next_start, next_marker;
+    int start, end, marker, next_start, next_marker;
     int err, i, j, length;
 
     if (frag->data_size < 4) {
@@ -144,19 +123,19 @@ static int cbs_jpeg_split_fragment(CodedBitstreamContext *ctx,
     marker = frag->data[i];
     start  = i + 1;
 
-    for (unit = 0;; unit++) {
+    do {
         if (marker == JPEG_MARKER_EOI) {
             break;
         } else if (marker == JPEG_MARKER_SOS) {
+            next_marker = -1;
+            end = start;
             for (i = start; i + 1 < frag->data_size; i++) {
                 if (frag->data[i] != 0xff)
                     continue;
                 end = i;
                 for (++i; i + 1 < frag->data_size &&
                           frag->data[i] == 0xff; i++);
-                if (i + 1 >= frag->data_size) {
-                    next_marker = -1;
-                } else {
+                if (i + 1 < frag->data_size) {
                     if (frag->data[i] == 0x00)
                         continue;
                     next_marker = frag->data[i];
@@ -197,6 +176,9 @@ static int cbs_jpeg_split_fragment(CodedBitstreamContext *ctx,
         if (marker == JPEG_MARKER_SOS) {
             length = AV_RB16(frag->data + start);
 
+            if (length > end - start)
+                return AVERROR_INVALIDDATA;
+
             data_ref = NULL;
             data     = av_malloc(end - start +
                                  AV_INPUT_BUFFER_PADDING_SIZE);
@@ -223,19 +205,14 @@ static int cbs_jpeg_split_fragment(CodedBitstreamContext *ctx,
             data_ref  = frag->data_ref;
         }
 
-        err = ff_cbs_insert_unit_data(ctx, frag, unit, marker,
+        err = ff_cbs_append_unit_data(frag, marker,
                                       data, data_size, data_ref);
-        if (err < 0) {
-            if (!data_ref)
-                av_freep(&data);
+        if (err < 0)
             return err;
-        }
 
-        if (next_marker == -1)
-            break;
         marker = next_marker;
         start  = next_start;
-    }
+    } while (next_marker != -1);
 
     return 0;
 }
@@ -250,40 +227,25 @@ static int cbs_jpeg_read_unit(CodedBitstreamContext *ctx,
     if (err < 0)
         return err;
 
+    err = ff_cbs_alloc_unit_content(ctx, unit);
+    if (err < 0)
+        return err;
+
     if (unit->type >= JPEG_MARKER_SOF0 &&
         unit->type <= JPEG_MARKER_SOF3) {
-        err = ff_cbs_alloc_unit_content(ctx, unit,
-                                        sizeof(JPEGRawFrameHeader),
-                                        NULL);
-        if (err < 0)
-            return err;
-
         err = cbs_jpeg_read_frame_header(ctx, &gbc, unit->content);
         if (err < 0)
             return err;
 
     } else if (unit->type >= JPEG_MARKER_APPN &&
                unit->type <= JPEG_MARKER_APPN + 15) {
-        err = ff_cbs_alloc_unit_content(ctx, unit,
-                                        sizeof(JPEGRawApplicationData),
-                                        &cbs_jpeg_free_application_data);
-        if (err < 0)
-            return err;
-
         err = cbs_jpeg_read_application_data(ctx, &gbc, unit->content);
         if (err < 0)
             return err;
 
     } else if (unit->type == JPEG_MARKER_SOS) {
-        JPEGRawScan *scan;
+        JPEGRawScan *scan = unit->content;
         int pos;
-
-        err = ff_cbs_alloc_unit_content(ctx, unit,
-                                        sizeof(JPEGRawScan),
-                                        &cbs_jpeg_free_scan);
-        if (err < 0)
-            return err;
-        scan = unit->content;
 
         err = cbs_jpeg_read_scan_header(ctx, &gbc, &scan->header);
         if (err < 0)
@@ -301,21 +263,17 @@ static int cbs_jpeg_read_unit(CodedBitstreamContext *ctx,
 
     } else {
         switch (unit->type) {
-#define SEGMENT(marker, type, func, free) \
+#define SEGMENT(marker, func) \
         case JPEG_MARKER_ ## marker: \
             { \
-                err = ff_cbs_alloc_unit_content(ctx, unit, \
-                                                sizeof(type), free); \
-                if (err < 0) \
-                    return err; \
                 err = cbs_jpeg_read_ ## func(ctx, &gbc, unit->content); \
                 if (err < 0) \
                     return err; \
             } \
             break
-            SEGMENT(DQT, JPEGRawQuantisationTableSpecification, dqt, NULL);
-            SEGMENT(DHT, JPEGRawHuffmanTableSpecification,      dht, NULL);
-            SEGMENT(COM, JPEGRawComment,  comment, &cbs_jpeg_free_comment);
+            SEGMENT(DQT, dqt);
+            SEGMENT(DHT, dht);
+            SEGMENT(COM, comment);
 #undef SEGMENT
         default:
             return AVERROR(ENOSYS);
@@ -330,7 +288,7 @@ static int cbs_jpeg_write_scan(CodedBitstreamContext *ctx,
                                PutBitContext *pbc)
 {
     JPEGRawScan *scan = unit->content;
-    int i, err;
+    int err;
 
     err = cbs_jpeg_write_scan_header(ctx, pbc, &scan->header);
     if (err < 0)
@@ -340,8 +298,12 @@ static int cbs_jpeg_write_scan(CodedBitstreamContext *ctx,
         if (scan->data_size * 8 > put_bits_left(pbc))
             return AVERROR(ENOSPC);
 
-        for (i = 0; i < scan->data_size; i++)
-            put_bits(pbc, 8, scan->data[i]);
+        av_assert0(put_bits_count(pbc) % 8 == 0);
+
+        flush_put_bits(pbc);
+
+        memcpy(put_bits_ptr(pbc), scan->data, scan->data_size);
+        skip_put_bytes(pbc, scan->data_size);
     }
 
     return 0;
@@ -454,8 +416,26 @@ static int cbs_jpeg_assemble_fragment(CodedBitstreamContext *ctx,
     return 0;
 }
 
+static const CodedBitstreamUnitTypeDescriptor cbs_jpeg_unit_types[] = {
+    CBS_UNIT_RANGE_POD(JPEG_MARKER_SOF0, JPEG_MARKER_SOF3, JPEGRawFrameHeader),
+
+    CBS_UNIT_RANGE_INTERNAL_REF(JPEG_MARKER_APPN, JPEG_MARKER_APPN + 15,
+                                JPEGRawApplicationData, Ap),
+
+    CBS_UNIT_TYPE_INTERNAL_REF(JPEG_MARKER_SOS, JPEGRawScan, data),
+
+    CBS_UNIT_TYPE_POD(JPEG_MARKER_DQT, JPEGRawQuantisationTableSpecification),
+    CBS_UNIT_TYPE_POD(JPEG_MARKER_DHT, JPEGRawHuffmanTableSpecification),
+
+    CBS_UNIT_TYPE_INTERNAL_REF(JPEG_MARKER_COM, JPEGRawComment, Cm),
+
+    CBS_UNIT_TYPE_END_OF_LIST
+};
+
 const CodedBitstreamType ff_cbs_type_jpeg = {
     .codec_id          = AV_CODEC_ID_MJPEG,
+
+    .unit_types        = cbs_jpeg_unit_types,
 
     .split_fragment    = &cbs_jpeg_split_fragment,
     .read_unit         = &cbs_jpeg_read_unit,
