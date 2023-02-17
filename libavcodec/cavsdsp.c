@@ -22,8 +22,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include <stdio.h>
-
 #include "idctdsp.h"
 #include "mathops.h"
 #include "cavsdsp.h"
@@ -201,20 +199,20 @@ static void cavs_idct8_add_c(uint8_t *dst, int16_t *block, ptrdiff_t stride)
     src[0][0] += 8;
 
     for( i = 0; i < 8; i++ ) {
-        const int a0 =  3*src[i][1] - (src[i][7]<<1);
-        const int a1 =  3*src[i][3] + (src[i][5]<<1);
-        const int a2 =  (src[i][3]<<1) - 3*src[i][5];
-        const int a3 =  (src[i][1]<<1) + 3*src[i][7];
+        const int a0 = 3 * src[i][1] - 2 * src[i][7];
+        const int a1 = 3 * src[i][3] + 2 * src[i][5];
+        const int a2 = 2 * src[i][3] - 3 * src[i][5];
+        const int a3 = 2 * src[i][1] + 3 * src[i][7];
 
-        const int b4 = ((a0 + a1 + a3)<<1) + a1;
-        const int b5 = ((a0 - a1 + a2)<<1) + a0;
-        const int b6 = ((a3 - a2 - a1)<<1) + a3;
-        const int b7 = ((a0 - a2 - a3)<<1) - a2;
+        const int b4 = 2 * (a0 + a1 + a3) + a1;
+        const int b5 = 2 * (a0 - a1 + a2) + a0;
+        const int b6 = 2 * (a3 - a2 - a1) + a3;
+        const int b7 = 2 * (a0 - a2 - a3) - a2;
 
-        const int a7 = (src[i][2]<<2) - 10*src[i][6];
-        const int a6 = (src[i][6]<<2) + 10*src[i][2];
-        const int a5 = ((src[i][0] - src[i][4]) << 3) + 4;
-        const int a4 = ((src[i][0] + src[i][4]) << 3) + 4;
+        const int a7 = 4 * src[i][2] - 10 * src[i][6];
+        const int a6 = 4 * src[i][6] + 10 * src[i][2];
+        const int a5 = 8 * (src[i][0] - src[i][4]) + 4;
+        const int a4 = 8 * (src[i][0] + src[i][4]) + 4;
 
         const int b0 = a4 + a6;
         const int b1 = a5 + a7;
@@ -231,20 +229,20 @@ static void cavs_idct8_add_c(uint8_t *dst, int16_t *block, ptrdiff_t stride)
         src[i][7] = (b0 - b4) >> 3;
     }
     for( i = 0; i < 8; i++ ) {
-        const int a0 =  3*src[1][i] - (src[7][i]<<1);
-        const int a1 =  3*src[3][i] + (src[5][i]<<1);
-        const int a2 =  (src[3][i]<<1) - 3*src[5][i];
-        const int a3 =  (src[1][i]<<1) + 3*src[7][i];
+        const int a0 = 3 * src[1][i] - 2 * src[7][i];
+        const int a1 = 3 * src[3][i] + 2 * src[5][i];
+        const int a2 = 2 * src[3][i] - 3 * src[5][i];
+        const int a3 = 2 * src[1][i] + 3 * src[7][i];
 
-        const int b4 = ((a0 + a1 + a3)<<1) + a1;
-        const int b5 = ((a0 - a1 + a2)<<1) + a0;
-        const int b6 = ((a3 - a2 - a1)<<1) + a3;
-        const int b7 = ((a0 - a2 - a3)<<1) - a2;
+        const int b4 = 2 * (a0 + a1 + a3) + a1;
+        const int b5 = 2 * (a0 - a1 + a2) + a0;
+        const int b6 = 2 * (a3 - a2 - a1) + a3;
+        const int b7 = 2 * (a0 - a2 - a3) - a2;
 
-        const int a7 = (src[2][i]<<2) - 10*src[6][i];
-        const int a6 = (src[6][i]<<2) + 10*src[2][i];
-        const int a5 = (src[0][i] - src[4][i]) << 3;
-        const int a4 = (src[0][i] + src[4][i]) << 3;
+        const int a7 = 4 * src[2][i] - 10 * src[6][i];
+        const int a6 = 4 * src[6][i] + 10 * src[2][i];
+        const int a5 = 8 * (src[0][i] - src[4][i]);
+        const int a4 = 8 * (src[0][i] + src[4][i]);
 
         const int b0 = a4 + a6;
         const int b1 = a5 + a7;
@@ -427,13 +425,14 @@ static void OPNAME ## cavs_filt8_hv_ ## NAME(uint8_t *dst, const uint8_t *src1, 
 \
 static void OPNAME ## cavs_filt16_hv_ ## NAME(uint8_t *dst, const uint8_t *src1, const uint8_t *src2, ptrdiff_t dstStride, ptrdiff_t srcStride)\
 {                                                                       \
-    OPNAME ## cavs_filt8_hv_ ## NAME(dst  , src1,   src2  , dstStride, srcStride); \
-    OPNAME ## cavs_filt8_hv_ ## NAME(dst+8, src1+8, src2+8, dstStride, srcStride); \
+    OPNAME ## cavs_filt8_hv_ ## NAME(dst  , src1,   FULL ? src2     : NULL, dstStride, srcStride); \
+    OPNAME ## cavs_filt8_hv_ ## NAME(dst+8, src1+8, FULL ? src2 + 8 : NULL, dstStride, srcStride); \
     src1 += 8*srcStride;\
-    src2 += 8*srcStride;\
+    if (FULL) \
+        src2 += 8*srcStride;\
     dst += 8*dstStride;\
-    OPNAME ## cavs_filt8_hv_ ## NAME(dst  , src1,   src2  , dstStride, srcStride); \
-    OPNAME ## cavs_filt8_hv_ ## NAME(dst+8, src1+8, src2+8, dstStride, srcStride); \
+    OPNAME ## cavs_filt8_hv_ ## NAME(dst  , src1,   FULL ? src2     : NULL, dstStride, srcStride); \
+    OPNAME ## cavs_filt8_hv_ ## NAME(dst+8, src1+8, FULL ? src2 + 8 : NULL, dstStride, srcStride); \
 }\
 
 #define CAVS_MC(OPNAME, SIZE) \
@@ -494,22 +493,22 @@ static void OPNAME ## cavs_qpel ## SIZE ## _mc33_c(uint8_t *dst, const uint8_t *
 \
 static void OPNAME ## cavs_qpel ## SIZE ## _mc21_c(uint8_t *dst, const uint8_t *src, ptrdiff_t stride)\
 {\
-  OPNAME ## cavs_filt ## SIZE ## _hv_ff(dst, src, src+stride+1,stride, stride); \
+  OPNAME ## cavs_filt ## SIZE ## _hv_ff(dst, src, NULL, stride, stride); \
 }\
 \
 static void OPNAME ## cavs_qpel ## SIZE ## _mc12_c(uint8_t *dst, const uint8_t *src, ptrdiff_t stride)\
 {\
-  OPNAME ## cavs_filt ## SIZE ## _hv_ii(dst, src, src+stride+1,stride, stride); \
+  OPNAME ## cavs_filt ## SIZE ## _hv_ii(dst, src, NULL, stride, stride); \
 }\
 \
 static void OPNAME ## cavs_qpel ## SIZE ## _mc32_c(uint8_t *dst, const uint8_t *src, ptrdiff_t stride)\
 {\
-  OPNAME ## cavs_filt ## SIZE ## _hv_kk(dst, src, src+stride+1,stride, stride); \
+  OPNAME ## cavs_filt ## SIZE ## _hv_kk(dst, src, NULL, stride, stride); \
 }\
 \
 static void OPNAME ## cavs_qpel ## SIZE ## _mc23_c(uint8_t *dst, const uint8_t *src, ptrdiff_t stride)\
 {\
-  OPNAME ## cavs_filt ## SIZE ## _hv_qq(dst, src, src+stride+1,stride, stride); \
+  OPNAME ## cavs_filt ## SIZE ## _hv_qq(dst, src, NULL, stride, stride); \
 }\
 
 #define op_put1(a, b)  a = cm[((b)+4)>>3]
@@ -548,7 +547,8 @@ CAVS_MC(avg_, 16)
 #define put_cavs_qpel16_mc00_c ff_put_pixels16x16_c
 #define avg_cavs_qpel16_mc00_c ff_avg_pixels16x16_c
 
-av_cold void ff_cavsdsp_init(CAVSDSPContext* c, AVCodecContext *avctx) {
+av_cold void ff_cavsdsp_init(CAVSDSPContext* c)
+{
 #define dspfunc(PFX, IDX, NUM) \
     c->PFX ## _pixels_tab[IDX][ 0] = PFX ## NUM ## _mc00_c; \
     c->PFX ## _pixels_tab[IDX][ 1] = PFX ## NUM ## _mc10_c; \
@@ -577,6 +577,7 @@ av_cold void ff_cavsdsp_init(CAVSDSPContext* c, AVCodecContext *avctx) {
     c->cavs_idct8_add = cavs_idct8_add_c;
     c->idct_perm = FF_IDCT_PERM_NONE;
 
-    if (ARCH_X86)
-        ff_cavsdsp_init_x86(c, avctx);
+#if ARCH_X86
+    ff_cavsdsp_init_x86(c);
+#endif
 }

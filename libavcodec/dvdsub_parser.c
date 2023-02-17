@@ -32,11 +32,6 @@ typedef struct DVDSubParseContext {
     int packet_index;
 } DVDSubParseContext;
 
-static av_cold int dvdsub_parse_init(AVCodecParserContext *s)
-{
-    return 0;
-}
-
 static int dvdsub_parse(AVCodecParserContext *s,
                         AVCodecContext *avctx,
                         const uint8_t **poutbuf, int *poutbuf_size,
@@ -48,7 +43,7 @@ static int dvdsub_parse(AVCodecParserContext *s,
     *poutbuf_size = buf_size;
 
     if (pc->packet_index == 0) {
-        if (buf_size < 2 || AV_RB16(buf) && buf_size < 6) {
+        if (buf_size < 2 || (AV_RB16(buf) == 0 && buf_size < 6)) {
             if (buf_size)
                 av_log(avctx, AV_LOG_DEBUG, "Parser input %d too small\n", buf_size);
             return buf_size;
@@ -89,10 +84,9 @@ static av_cold void dvdsub_parse_close(AVCodecParserContext *s)
     av_freep(&pc->packet);
 }
 
-AVCodecParser ff_dvdsub_parser = {
+const AVCodecParser ff_dvdsub_parser = {
     .codec_ids      = { AV_CODEC_ID_DVD_SUBTITLE },
     .priv_data_size = sizeof(DVDSubParseContext),
-    .parser_init    = dvdsub_parse_init,
     .parser_parse   = dvdsub_parse,
     .parser_close   = dvdsub_parse_close,
 };

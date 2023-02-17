@@ -23,41 +23,18 @@
 
 #include <stdint.h>
 
-#include "get_bits.h"
+#include "libavutil/buffer.h"
 
-/**
- * SEI message types
- */
+#include "get_bits.h"
+#include "hevc.h"
+#include "h2645_sei.h"
+#include "sei.h"
+
+
 typedef enum {
-    HEVC_SEI_TYPE_BUFFERING_PERIOD                     = 0,
-    HEVC_SEI_TYPE_PICTURE_TIMING                       = 1,
-    HEVC_SEI_TYPE_PAN_SCAN_RECT                        = 2,
-    HEVC_SEI_TYPE_FILLER_PAYLOAD                       = 3,
-    HEVC_SEI_TYPE_USER_DATA_REGISTERED_ITU_T_T35       = 4,
-    HEVC_SEI_TYPE_USER_DATA_UNREGISTERED               = 5,
-    HEVC_SEI_TYPE_RECOVERY_POINT                       = 6,
-    HEVC_SEI_TYPE_SCENE_INFO                           = 9,
-    HEVC_SEI_TYPE_FULL_FRAME_SNAPSHOT                  = 15,
-    HEVC_SEI_TYPE_PROGRESSIVE_REFINEMENT_SEGMENT_START = 16,
-    HEVC_SEI_TYPE_PROGRESSIVE_REFINEMENT_SEGMENT_END   = 17,
-    HEVC_SEI_TYPE_FILM_GRAIN_CHARACTERISTICS           = 19,
-    HEVC_SEI_TYPE_POST_FILTER_HINT                     = 22,
-    HEVC_SEI_TYPE_TONE_MAPPING_INFO                    = 23,
-    HEVC_SEI_TYPE_FRAME_PACKING                        = 45,
-    HEVC_SEI_TYPE_DISPLAY_ORIENTATION                  = 47,
-    HEVC_SEI_TYPE_SOP_DESCRIPTION                      = 128,
-    HEVC_SEI_TYPE_ACTIVE_PARAMETER_SETS                = 129,
-    HEVC_SEI_TYPE_DECODING_UNIT_INFO                   = 130,
-    HEVC_SEI_TYPE_TEMPORAL_LEVEL0_INDEX                = 131,
-    HEVC_SEI_TYPE_DECODED_PICTURE_HASH                 = 132,
-    HEVC_SEI_TYPE_SCALABLE_NESTING                     = 133,
-    HEVC_SEI_TYPE_REGION_REFRESH_INFO                  = 134,
-    HEVC_SEI_TYPE_TIME_CODE                            = 136,
-    HEVC_SEI_TYPE_MASTERING_DISPLAY_INFO               = 137,
-    HEVC_SEI_TYPE_CONTENT_LIGHT_LEVEL_INFO             = 144,
-    HEVC_SEI_TYPE_ALTERNATIVE_TRANSFER_CHARACTERISTICS = 147,
-    HEVC_SEI_TYPE_ALPHA_CHANNEL_INFO                   = 165,
-} HEVC_SEI_Type;
+        HEVC_SEI_PIC_STRUCT_FRAME_DOUBLING = 7,
+        HEVC_SEI_PIC_STRUCT_FRAME_TRIPLING = 8
+} HEVC_SEI_PicStructType;
 
 typedef struct HEVCSEIPictureHash {
     uint8_t       md5[3][16];
@@ -72,20 +49,9 @@ typedef struct HEVCSEIFramePacking {
     int current_frame_is_frame0_flag;
 } HEVCSEIFramePacking;
 
-typedef struct HEVCSEIDisplayOrientation {
-    int present;
-    int anticlockwise_rotation;
-    int hflip, vflip;
-} HEVCSEIDisplayOrientation;
-
 typedef struct HEVCSEIPictureTiming {
     int picture_struct;
 } HEVCSEIPictureTiming;
-
-typedef struct HEVCSEIA53Caption {
-    int a53_caption_size;
-    uint8_t *a53_caption;
-} HEVCSEIA53Caption;
 
 typedef struct HEVCSEIMasteringDisplay {
     int present;
@@ -106,30 +72,56 @@ typedef struct HEVCSEIAlternativeTransfer {
     int preferred_transfer_characteristics;
 } HEVCSEIAlternativeTransfer;
 
+typedef struct HEVCSEITimeCode {
+    int      present;
+    uint8_t  num_clock_ts;
+    uint8_t  clock_timestamp_flag[3];
+    uint8_t  units_field_based_flag[3];
+    uint8_t  counting_type[3];
+    uint8_t  full_timestamp_flag[3];
+    uint8_t  discontinuity_flag[3];
+    uint8_t  cnt_dropped_flag[3];
+    uint16_t n_frames[3];
+    uint8_t  seconds_value[3];
+    uint8_t  minutes_value[3];
+    uint8_t  hours_value[3];
+    uint8_t  seconds_flag[3];
+    uint8_t  minutes_flag[3];
+    uint8_t  hours_flag[3];
+    uint8_t  time_offset_length[3];
+    int32_t  time_offset_value[3];
+} HEVCSEITimeCode;
+
 typedef struct HEVCSEI {
+    H2645SEI common;
     HEVCSEIPictureHash picture_hash;
-    HEVCSEIFramePacking frame_packing;
-    HEVCSEIDisplayOrientation display_orientation;
     HEVCSEIPictureTiming picture_timing;
-    HEVCSEIA53Caption a53_caption;
     HEVCSEIMasteringDisplay mastering_display;
     HEVCSEIContentLight content_light;
     int active_seq_parameter_set_id;
-    HEVCSEIAlternativeTransfer alternative_transfer;
+    HEVCSEITimeCode timecode;
 } HEVCSEI;
 
 struct HEVCParamSets;
 
 int ff_hevc_decode_nal_sei(GetBitContext *gb, void *logctx, HEVCSEI *s,
-                           const struct HEVCParamSets *ps, int type);
+                           const struct HEVCParamSets *ps, enum HEVCNALUnitType type);
+
+static inline int ff_hevc_sei_ctx_replace(HEVCSEI *dst, const HEVCSEI *src)
+{
+    return ff_h2645_sei_ctx_replace(&dst->common, &src->common);
+}
 
 /**
  * Reset SEI values that are stored on the Context.
  * e.g. Caption data that was extracted during NAL
  * parsing.
  *
- * @param s HEVCContext.
+ * @param sei HEVCSEI.
  */
-void ff_hevc_reset_sei(HEVCSEI *s);
+static inline void ff_hevc_reset_sei(HEVCSEI *sei)
+{
+    ff_h2645_sei_reset(&sei->common);
+}
 
 #endif /* AVCODEC_HEVC_SEI_H */

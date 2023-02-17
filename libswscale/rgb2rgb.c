@@ -137,8 +137,15 @@ void (*yuyvtoyuv422)(uint8_t *ydst, uint8_t *udst, uint8_t *vdst,
 av_cold void ff_sws_rgb2rgb_init(void)
 {
     rgb2rgb_init_c();
-    if (ARCH_X86)
-        rgb2rgb_init_x86();
+#if ARCH_AARCH64
+    rgb2rgb_init_aarch64();
+#elif ARCH_RISCV
+    rgb2rgb_init_riscv();
+#elif ARCH_X86
+    rgb2rgb_init_x86();
+#elif ARCH_LOONGARCH64
+    rgb2rgb_init_loongarch();
+#endif
 }
 
 void rgb32to24(const uint8_t *src, uint8_t *dst, int src_size)
@@ -314,7 +321,7 @@ void rgb15tobgr15(const uint8_t *src, uint8_t *dst, int src_size)
 void rgb12tobgr12(const uint8_t *src, uint8_t *dst, int src_size)
 {
     uint16_t *d = (uint16_t *)dst;
-    uint16_t *s = (uint16_t *)src;
+    const uint16_t *s = (const uint16_t *)src;
     int i, num_pixels = src_size >> 1;
 
     for (i = 0; i < num_pixels; i++) {
@@ -328,7 +335,7 @@ void rgb48tobgr48_ ## need_bswap(const uint8_t *src,                    \
                                  uint8_t *dst, int src_size)            \
 {                                                                       \
     uint16_t *d = (uint16_t *)dst;                                      \
-    uint16_t *s = (uint16_t *)src;                                      \
+    const uint16_t *s = (const uint16_t *)src;                          \
     int i, num_pixels = src_size >> 1;                                  \
                                                                         \
     for (i = 0; i < num_pixels; i += 3) {                               \
@@ -346,7 +353,7 @@ void rgb64tobgr48_ ## need_bswap(const uint8_t *src,                    \
                                  uint8_t *dst, int src_size)            \
 {                                                                       \
     uint16_t *d = (uint16_t *)dst;                                      \
-    uint16_t *s = (uint16_t *)src;                                      \
+    const uint16_t *s = (const uint16_t *)src;                          \
     int i, num_pixels = src_size >> 3;                                  \
                                                                         \
     for (i = 0; i < num_pixels; i++) {                                  \
@@ -364,7 +371,7 @@ void rgb64to48_ ## need_bswap(const uint8_t *src,                       \
                               uint8_t *dst, int src_size)               \
 {                                                                       \
     uint16_t *d = (uint16_t *)dst;                                      \
-    uint16_t *s = (uint16_t *)src;                                      \
+    const uint16_t *s = (const uint16_t *)src;                          \
     int i, num_pixels = src_size >> 3;                                  \
                                                                         \
     for (i = 0; i < num_pixels; i++) {                                  \
@@ -382,7 +389,7 @@ void rgb48tobgr64_ ## need_bswap(const uint8_t *src,                    \
                                  uint8_t *dst, int src_size)            \
 {                                                                       \
     uint16_t *d = (uint16_t *)dst;                                      \
-    uint16_t *s = (uint16_t *)src;                                      \
+    const uint16_t *s = (const uint16_t *)src;                          \
     int i, num_pixels = src_size / 6;                                   \
                                                                         \
     for (i = 0; i < num_pixels; i++) {                                  \
@@ -401,7 +408,7 @@ void rgb48to64_ ## need_bswap(const uint8_t *src,                       \
                               uint8_t *dst, int src_size)               \
 {                                                                       \
     uint16_t *d = (uint16_t *)dst;                                      \
-    uint16_t *s = (uint16_t *)src;                                      \
+    const uint16_t *s = (const uint16_t *)src;                          \
     int i, num_pixels = src_size / 6;                                   \
                                                                         \
     for (i = 0; i < num_pixels; i++) {                                  \

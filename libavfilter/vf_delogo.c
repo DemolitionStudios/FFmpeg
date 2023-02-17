@@ -55,7 +55,6 @@ enum var_name {
     VAR_T,
     VAR_VARS_NB
 };
-#define TS2T(ts, tb) ((ts) == AV_NOPTS_VALUE ? NAN : (double)(ts) * av_q2d(tb))
 
 static int set_expr(AVExpr **pexpr, const char *expr, const char *option, void *log_ctx)
 {
@@ -207,16 +206,11 @@ typedef struct DelogoContext {
 #define FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM
 
 static const AVOption delogo_options[]= {
-    { "x",    "set logo x position",       OFFSET(x_expr),    AV_OPT_TYPE_STRING, { .str = "-1" }, CHAR_MIN, CHAR_MAX, FLAGS },
-    { "y",    "set logo y position",       OFFSET(y_expr),    AV_OPT_TYPE_STRING, { .str = "-1" }, CHAR_MIN, CHAR_MAX, FLAGS },
-    { "w",    "set logo width",            OFFSET(w_expr),    AV_OPT_TYPE_STRING, { .str = "-1" }, CHAR_MIN, CHAR_MAX, FLAGS },
-    { "h",    "set logo height",           OFFSET(h_expr),    AV_OPT_TYPE_STRING, { .str = "-1" }, CHAR_MIN, CHAR_MAX, FLAGS },
-#if LIBAVFILTER_VERSION_MAJOR < 7
-    /* Actual default value for band/t is 1, set in init */
-    { "band", "set delogo area band size", OFFSET(band), AV_OPT_TYPE_INT, { .i64 =  0 },  0, INT_MAX, FLAGS },
-    { "t",    "set delogo area band size", OFFSET(band), AV_OPT_TYPE_INT, { .i64 =  0 },  0, INT_MAX, FLAGS },
-#endif
-    { "show", "show delogo area",          OFFSET(show), AV_OPT_TYPE_BOOL,{ .i64 =  0 },  0, 1,       FLAGS },
+    { "x",    "set logo x position",       OFFSET(x_expr),    AV_OPT_TYPE_STRING, { .str = "-1" }, 0, 0, FLAGS },
+    { "y",    "set logo y position",       OFFSET(y_expr),    AV_OPT_TYPE_STRING, { .str = "-1" }, 0, 0, FLAGS },
+    { "w",    "set logo width",            OFFSET(w_expr),    AV_OPT_TYPE_STRING, { .str = "-1" }, 0, 0, FLAGS },
+    { "h",    "set logo height",           OFFSET(h_expr),    AV_OPT_TYPE_STRING, { .str = "-1" }, 0, 0, FLAGS },
+    { "show", "show delogo area",          OFFSET(show),      AV_OPT_TYPE_BOOL,   { .i64 =  0 },   0, 1, FLAGS },
     { NULL }
 };
 
@@ -231,20 +225,12 @@ static av_cold void uninit(AVFilterContext *ctx)
     av_expr_free(s->h_pexpr);    s->h_pexpr = NULL;
 }
 
-
-static int query_formats(AVFilterContext *ctx)
-{
-    static const enum AVPixelFormat pix_fmts[] = {
-        AV_PIX_FMT_YUV444P,  AV_PIX_FMT_YUV422P,  AV_PIX_FMT_YUV420P,
-        AV_PIX_FMT_YUV411P,  AV_PIX_FMT_YUV410P,  AV_PIX_FMT_YUV440P,
-        AV_PIX_FMT_YUVA420P, AV_PIX_FMT_GRAY8,
-        AV_PIX_FMT_NONE
-    };
-    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
-    if (!fmts_list)
-        return AVERROR(ENOMEM);
-    return ff_set_common_formats(ctx, fmts_list);
-}
+static const enum AVPixelFormat pix_fmts[] = {
+    AV_PIX_FMT_YUV444P,  AV_PIX_FMT_YUV422P,  AV_PIX_FMT_YUV420P,
+    AV_PIX_FMT_YUV411P,  AV_PIX_FMT_YUV410P,  AV_PIX_FMT_YUV440P,
+    AV_PIX_FMT_YUVA420P, AV_PIX_FMT_GRAY8,
+    AV_PIX_FMT_NONE
+};
 
 static av_cold int init(AVFilterContext *ctx)
 {
@@ -272,16 +258,8 @@ static av_cold int init(AVFilterContext *ctx)
     CHECK_UNSET_OPT(w);
     CHECK_UNSET_OPT(h);
 
-#if LIBAVFILTER_VERSION_MAJOR < 7
-    if (s->band == 0) { /* Unset, use default */
-        av_log(ctx, AV_LOG_WARNING, "Note: default band value was changed from 4 to 1.\n");
-        s->band = 1;
-    } else if (s->band != 1) {
-        av_log(ctx, AV_LOG_WARNING, "Option band is deprecated.\n");
-    }
-#else
     s->band = 1;
-#endif
+
     av_log(ctx, AV_LOG_VERBOSE, "x:%d y:%d, w:%d h:%d band:%d show:%d\n",
            s->x, s->y, s->w, s->h, s->band, s->show);
 
@@ -401,7 +379,6 @@ static const AVFilterPad avfilter_vf_delogo_inputs[] = {
         .filter_frame = filter_frame,
         .config_props = config_input,
     },
-    { NULL }
 };
 
 static const AVFilterPad avfilter_vf_delogo_outputs[] = {
@@ -409,18 +386,17 @@ static const AVFilterPad avfilter_vf_delogo_outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
-    { NULL }
 };
 
-AVFilter ff_vf_delogo = {
+const AVFilter ff_vf_delogo = {
     .name          = "delogo",
     .description   = NULL_IF_CONFIG_SMALL("Remove logo from input video."),
     .priv_size     = sizeof(DelogoContext),
     .priv_class    = &delogo_class,
     .init          = init,
     .uninit        = uninit,
-    .query_formats = query_formats,
-    .inputs        = avfilter_vf_delogo_inputs,
-    .outputs       = avfilter_vf_delogo_outputs,
+    FILTER_INPUTS(avfilter_vf_delogo_inputs),
+    FILTER_OUTPUTS(avfilter_vf_delogo_outputs),
+    FILTER_PIXFMTS_ARRAY(pix_fmts),
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
 };

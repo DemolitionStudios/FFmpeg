@@ -248,14 +248,6 @@ cglobal add_dirac_obmc%1_%2, 6,6,5, dst, src, stride, obmc, yblen
 %endm
 
 INIT_MMX
-%if ARCH_X86_64 == 0
-PUT_RECT mmx
-ADD_RECT mmx
-
-HPEL_FILTER mmx
-ADD_OBMC 32, mmx
-ADD_OBMC 16, mmx
-%endif
 ADD_OBMC 8, mmx
 
 INIT_XMM
@@ -274,7 +266,7 @@ cglobal dequant_subband_32, 7, 7, 4, src, dst, stride, qf, qs, tot_v, tot_h
     movd   m3, qsd
     SPLATD m2
     SPLATD m3
-    mov    r4, tot_hq
+    mov    r4d, tot_hd
     mov    r3, dstq
 
     .loop_v:
@@ -294,8 +286,9 @@ cglobal dequant_subband_32, 7, 7, 4, src, dst, stride, qf, qs, tot_v, tot_h
 
     add    srcq, mmsize
     add    dstq, mmsize
-    sub    tot_hd, 4
+    sub    tot_hq, 4
     jg     .loop_h
+    lea    srcq, [srcq + 4*tot_hq]
 
     add    r3, strideq
     dec    tot_vd

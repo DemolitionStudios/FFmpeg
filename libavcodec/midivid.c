@@ -19,20 +19,16 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
 #include "libavutil/imgutils.h"
 #include "libavutil/internal.h"
-#include "libavutil/intreadwrite.h"
 #include "libavutil/mem.h"
 
 #define BITSTREAM_READER_LE
 #include "avcodec.h"
 #include "get_bits.h"
 #include "bytestream.h"
-#include "internal.h"
+#include "codec_internal.h"
+#include "decode.h"
 
 typedef struct MidiVidContext {
     GetByteContext gb;
@@ -59,21 +55,24 @@ static int decode_mvdv(MidiVidContext *s, AVCodecContext *avctx, AVFrame *frame)
     uint32_t nb_blocks;
 
     nb_vectors = bytestream2_get_le16(gb);
-    intra_flag = bytestream2_get_le16(gb);
+    intra_flag = !!bytestream2_get_le16(gb);
     if (intra_flag) {
         nb_blocks = (avctx->width / 2) * (avctx->height / 2);
     } else {
-        int skip_linesize;
+        int ret, skip_linesize, padding;
 
         nb_blocks = bytestream2_get_le32(gb);
         skip_linesize = avctx->width >> 1;
         mask_start = gb->buffer_start + bytestream2_tell(gb);
-        mask_size = (avctx->width >> 5) * (avctx->height >> 2);
+        mask_size = (FFALIGN(avctx->width, 32) >> 2) * (avctx->height >> 2) >> 3;
+        padding = (FFALIGN(avctx->width, 32) - avctx->width) >> 2;
 
         if (bytestream2_get_bytes_left(gb) < mask_size)
             return AVERROR_INVALIDDATA;
 
-        init_get_bits8(&mask, mask_start, mask_size);
+        ret = init_get_bits8(&mask, mask_start, mask_size);
+        if (ret < 0)
+            return ret;
         bytestream2_skip(gb, mask_size);
         skip = s->skip;
 
@@ -86,6 +85,7 @@ static int decode_mvdv(MidiVidContext *s, AVCodecContext *avctx, AVFrame *frame)
                 skip[(y*2+1)*skip_linesize + x*2  ] = flag;
                 skip[(y*2+1)*skip_linesize + x*2+1] = flag;
             }
+            skip_bits_long(&mask, padding);
         }
     }
 
@@ -94,10 +94,10 @@ static int decode_mvdv(MidiVidContext *s, AVCodecContext *avctx, AVFrame *frame)
         return AVERROR_INVALIDDATA;
     bytestream2_skip(gb, nb_vectors * 12);
     if (nb_vectors > 256) {
-        if (bytestream2_get_bytes_left(gb) < (nb_blocks + 7) / 8)
+        if (bytestream2_get_bytes_left(gb) < (nb_blocks + 7 * !intra_flag) / 8)
             return AVERROR_INVALIDDATA;
-        bytestream2_init(&idx9, gb->buffer_start + bytestream2_tell(gb), (nb_blocks + 7) / 8);
-        bytestream2_skip(gb, (nb_blocks + 7) / 8);
+        bytestream2_init(&idx9, gb->buffer_start + bytestream2_tell(gb), (nb_blocks + 7 * !intra_flag) / 8);
+        bytestream2_skip(gb, (nb_blocks + 7 * !intra_flag) / 8);
     }
 
     skip = s->skip;
@@ -124,6 +124,8 @@ static int decode_mvdv(MidiVidContext *s, AVCodecContext *avctx, AVFrame *frame)
                 idx9bits--;
                 idx = bytestream2_get_byte(gb) | (((idx9val >> (7 - idx9bits)) & 1) << 8);
             }
+            if (idx >= nb_vectors)
+                return AVERROR_INVALIDDATA;
 
             dsty[x  +frame->linesize[0]] = vec[idx * 12 + 0];
             dsty[x+1+frame->linesize[0]] = vec[idx * 12 + 3];
@@ -181,7 +183,7 @@ static ptrdiff_t lzss_uncompress(MidiVidContext *s, GetByteContext *gb, uint8_t 
     return dst - dst_start;
 }
 
-static int decode_frame(AVCodecContext *avctx, void *data,
+static int decode_frame(AVCodecContext *avctx, AVFrame *rframe,
                         int *got_frame, AVPacket *avpkt)
 {
     MidiVidContext *s = avctx->priv_data;
@@ -196,12 +198,7 @@ static int decode_frame(AVCodecContext *avctx, void *data,
     bytestream2_skip(gb, 8);
     uncompressed = bytestream2_get_le32(gb);
 
-    if ((ret = ff_reget_buffer(avctx, s->frame, 0)) < 0)
-        return ret;
-
-    if (uncompressed) {
-        ret = decode_mvdv(s, avctx, frame);
-    } else {
+    if (!uncompressed) {
         av_fast_padded_malloc(&s->uncompressed, &s->uncompressed_size, 16LL * (avpkt->size - 12));
         if (!s->uncompressed)
             return AVERROR(ENOMEM);
@@ -210,14 +207,18 @@ static int decode_frame(AVCodecContext *avctx, void *data,
         if (ret < 0)
             return ret;
         bytestream2_init(gb, s->uncompressed, ret);
-        ret = decode_mvdv(s, avctx, frame);
     }
+
+    if ((ret = ff_reget_buffer(avctx, s->frame, 0)) < 0)
+        return ret;
+
+    ret = decode_mvdv(s, avctx, frame);
 
     if (ret < 0)
         return ret;
     key = ret;
 
-    if ((ret = av_frame_ref(data, s->frame)) < 0)
+    if ((ret = av_frame_ref(rframe, s->frame)) < 0)
         return ret;
 
     frame->pict_type = key ? AV_PICTURE_TYPE_I : AV_PICTURE_TYPE_P;
@@ -231,6 +232,9 @@ static av_cold int decode_init(AVCodecContext *avctx)
 {
     MidiVidContext *s = avctx->priv_data;
     int ret = av_image_check_size(avctx->width, avctx->height, 0, avctx);
+
+    if (avctx->width & 3 || avctx->height & 3)
+        ret = AVERROR_INVALIDDATA;
 
     if (ret < 0) {
         av_log(avctx, AV_LOG_ERROR, "Invalid image size %dx%d.\n",
@@ -268,16 +272,16 @@ static av_cold int decode_close(AVCodecContext *avctx)
     return 0;
 }
 
-AVCodec ff_mvdv_decoder = {
-    .name           = "mvdv",
-    .long_name      = NULL_IF_CONFIG_SMALL("MidiVid VQ"),
-    .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = AV_CODEC_ID_MVDV,
+const FFCodec ff_mvdv_decoder = {
+    .p.name         = "mvdv",
+    CODEC_LONG_NAME("MidiVid VQ"),
+    .p.type         = AVMEDIA_TYPE_VIDEO,
+    .p.id           = AV_CODEC_ID_MVDV,
     .priv_data_size = sizeof(MidiVidContext),
     .init           = decode_init,
-    .decode         = decode_frame,
+    FF_CODEC_DECODE_CB(decode_frame),
     .flush          = decode_flush,
     .close          = decode_close,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .p.capabilities = AV_CODEC_CAP_DR1,
     .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
 };

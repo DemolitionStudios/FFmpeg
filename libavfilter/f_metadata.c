@@ -23,6 +23,8 @@
  * filter for manipulating frame metadata
  */
 
+#include "config_components.h"
+
 #include <float.h>
 
 #include "libavutil/avassert.h"
@@ -61,12 +63,16 @@ enum MetadataFunction {
 static const char *const var_names[] = {
     "VALUE1",
     "VALUE2",
+    "FRAMEVAL",
+    "USERVAL",
     NULL
 };
 
 enum var_name {
     VAR_VALUE1,
     VAR_VALUE2,
+    VAR_FRAMEVAL,
+    VAR_USERVAL,
     VAR_VARS_NB
 };
 
@@ -88,6 +94,8 @@ typedef struct MetadataContext {
     int (*compare)(struct MetadataContext *s,
                    const char *value1, const char *value2);
     void (*print)(AVFilterContext *ctx, const char *msg, ...) av_printf_format(2, 3);
+
+    int direct;    // reduces buffering when printing to user-supplied URL
 } MetadataContext;
 
 #define OFFSET(x) offsetof(MetadataContext, x)
@@ -111,6 +119,7 @@ static const AVOption filt_name##_options[] = { \
     {   "ends_with",   NULL, 0, AV_OPT_TYPE_CONST, {.i64 = METADATAF_ENDS_WITH },   0, 0, FLAGS, "function" }, \
     { "expr", "set expression for expr function", OFFSET(expr_str), AV_OPT_TYPE_STRING, {.str = NULL }, 0, 0, FLAGS }, \
     { "file", "set file where to print metadata information", OFFSET(file_str), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, FLAGS }, \
+    { "direct", "reduce buffering when printing to user-set file or pipe", OFFSET(direct), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, FLAGS }, \
     { NULL } \
 }
 
@@ -169,8 +178,8 @@ static int parse_expr(MetadataContext *s, const char *value1, const char *value2
     if (sscanf(value1, "%lf", &f1) + sscanf(value2, "%lf", &f2) != 2)
         return 0;
 
-    s->var_values[VAR_VALUE1] = f1;
-    s->var_values[VAR_VALUE2] = f2;
+    s->var_values[VAR_VALUE1] = s->var_values[VAR_FRAMEVAL] = f1;
+    s->var_values[VAR_VALUE2] = s->var_values[VAR_USERVAL]  = f2;
 
     return av_expr_eval(s->expr, s->var_values, NULL);
 }
@@ -274,6 +283,9 @@ static av_cold int init(AVFilterContext *ctx)
                    s->file_str, buf);
             return ret;
         }
+
+        if (s->direct)
+            s->avio_context->direct = AVIO_FLAG_DIRECT;
     }
 
     return 0;
@@ -296,10 +308,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
     AVFilterLink *outlink = ctx->outputs[0];
     MetadataContext *s = ctx->priv;
     AVDictionary **metadata = &frame->metadata;
-    AVDictionaryEntry *e;
-
-    if (!*metadata)
-        return ff_filter_frame(outlink, frame);
+    const AVDictionaryEntry *e;
 
     e = av_dict_get(*metadata, !s->key ? "" : s->key, NULL,
                     !s->key ? AV_DICT_IGNORE_SUFFIX: 0);
@@ -330,7 +339,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
             s->print(ctx, "frame:%-4"PRId64" pts:%-7s pts_time:%s\n",
                      inlink->frame_count_out, av_ts2str(frame->pts), av_ts2timestr(frame->pts, &inlink->time_base));
             s->print(ctx, "%s=%s\n", e->key, e->value);
-            while ((e = av_dict_get(*metadata, "", e, AV_DICT_IGNORE_SUFFIX)) != NULL) {
+            while ((e = av_dict_iterate(*metadata, e)) != NULL) {
                 s->print(ctx, "%s=%s\n", e->key, e->value);
             }
         } else if (e && e->value && (!s->value || (e->value && s->compare(s, e->value, s->value)))) {
@@ -366,7 +375,6 @@ static const AVFilterPad ainputs[] = {
         .type         = AVMEDIA_TYPE_AUDIO,
         .filter_frame = filter_frame,
     },
-    { NULL }
 };
 
 static const AVFilterPad aoutputs[] = {
@@ -374,19 +382,19 @@ static const AVFilterPad aoutputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_AUDIO,
     },
-    { NULL }
 };
 
-AVFilter ff_af_ametadata = {
+const AVFilter ff_af_ametadata = {
     .name          = "ametadata",
     .description   = NULL_IF_CONFIG_SMALL("Manipulate audio frame metadata."),
     .priv_size     = sizeof(MetadataContext),
     .priv_class    = &ametadata_class,
     .init          = init,
     .uninit        = uninit,
-    .inputs        = ainputs,
-    .outputs       = aoutputs,
-    .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
+    FILTER_INPUTS(ainputs),
+    FILTER_OUTPUTS(aoutputs),
+    .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC |
+                     AVFILTER_FLAG_METADATA_ONLY,
 };
 #endif /* CONFIG_AMETADATA_FILTER */
 
@@ -401,7 +409,6 @@ static const AVFilterPad inputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .filter_frame = filter_frame,
     },
-    { NULL }
 };
 
 static const AVFilterPad outputs[] = {
@@ -409,18 +416,18 @@ static const AVFilterPad outputs[] = {
         .name = "default",
         .type = AVMEDIA_TYPE_VIDEO,
     },
-    { NULL }
 };
 
-AVFilter ff_vf_metadata = {
+const AVFilter ff_vf_metadata = {
     .name        = "metadata",
     .description = NULL_IF_CONFIG_SMALL("Manipulate video frame metadata."),
     .priv_size   = sizeof(MetadataContext),
     .priv_class  = &metadata_class,
     .init        = init,
     .uninit      = uninit,
-    .inputs      = inputs,
-    .outputs     = outputs,
-    .flags       = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
+    FILTER_INPUTS(inputs),
+    FILTER_OUTPUTS(outputs),
+    .flags       = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC |
+                   AVFILTER_FLAG_METADATA_ONLY,
 };
 #endif /* CONFIG_METADATA_FILTER */

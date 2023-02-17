@@ -38,6 +38,7 @@
 #include <string.h>
 
 #include "libavutil/cpu.h"
+#include "libavutil/error.h"
 #include "libavutil/lfg.h"
 #include "libavutil/log.h"
 #include "libavutil/mathematics.h"
@@ -68,13 +69,9 @@
 #define RANGE 1.0
 #define REF_SCALE(x, bits)  (x)
 #define FMT "%10.6f"
-#elif FFT_FIXED_32
+#else
 #define RANGE 8388608
 #define REF_SCALE(x, bits) (x)
-#define FMT "%6d"
-#else
-#define RANGE 16384
-#define REF_SCALE(x, bits) ((x) / (1 << (bits)))
 #define FMT "%6d"
 #endif
 
@@ -229,6 +226,7 @@ static inline void fft_init(FFTContext **s, int nbits, int inverse)
 #endif
 }
 
+#if CONFIG_MDCT
 static inline void mdct_init(FFTContext **s, int nbits, int inverse, double scale)
 {
 #if AVFFT
@@ -255,6 +253,7 @@ static inline void imdct_calc(struct FFTContext *s, FFTSample *output, const FFT
     s->imdct_calc(s, output, input);
 #endif
 }
+#endif
 
 static inline void fft_permute(FFTContext *s, FFTComplex *z)
 {
@@ -595,12 +594,14 @@ int main(int argc, char **argv)
             time_start = av_gettime_relative();
             for (it = 0; it < nb_its; it++) {
                 switch (transform) {
+#if CONFIG_MDCT
                 case TRANSFORM_MDCT:
                     if (do_inverse)
                         imdct_calc(m, &tab->re, &tab1->re);
                     else
                         mdct_calc(m, &tab->re, &tab1->re);
                     break;
+#endif
                 case TRANSFORM_FFT:
                     memcpy(tab, tab1, fft_size * sizeof(FFTComplex));
                     fft_calc(s, tab);

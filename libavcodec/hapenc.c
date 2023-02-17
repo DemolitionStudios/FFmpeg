@@ -42,8 +42,9 @@
 
 #include "avcodec.h"
 #include "bytestream.h"
+#include "codec_internal.h"
+#include "encode.h"
 #include "hap.h"
-#include "internal.h"
 #include "texturedsp.h"
 
 #define HAP_SNAPPY_MAX_CHUNKS 64
@@ -122,6 +123,13 @@ static int compress_texture(AVCodecContext *avctx, uint8_t *out, int out_length,
 
     if (ctx->tex_size > out_length)
         return AVERROR_BUFFER_TOO_SMALL;
+        
+    // New code!    
+    ctx->enc.tex_data.out = out;
+    ctx->enc.frame_data.in = f->data[0];
+    ctx->enc.stride = f->linesize[0];
+    avctx->execute2(avctx, ff_texturedsp_compress_thread, &ctx->enc, NULL, ctx->enc.slice_count);
+    // End of new code!	
 
 	/// TODO: alternate between CPU / GPU compress threads to utilize both (not a good idea probably, as the encoding algorithm will differ)
 //	if (ctx->gpu_encoding_1st_stage)
@@ -411,7 +419,7 @@ static int hap_encode(AVCodecContext *avctx, AVPacket *pkt,
     int pktsize = FFMAX(ctx->tex_size, ctx->max_compressed * ctx->chunk_count) + header_length;
 
     /* Allocate maximum size packet, shrink later. */
-    ret = ff_alloc_packet2(avctx, pkt, pktsize, header_length);
+    ret = ff_alloc_packet(avctx, pkt, pktsize);
     if (ret < 0)
         return ret;
 
@@ -451,7 +459,6 @@ static int hap_encode(AVCodecContext *avctx, AVPacket *pkt,
     hap_write_frame_header(ctx, pkt->data, final_data_size + header_length);
 
     av_shrink_packet(pkt, final_data_size + header_length);
-    pkt->flags |= AV_PKT_FLAG_KEY;
     *got_packet = 1;
     return 0;
 }
@@ -459,7 +466,6 @@ static int hap_encode(AVCodecContext *avctx, AVPacket *pkt,
 static av_cold int hap_init(AVCodecContext *avctx)
 {
     HapContext *ctx = avctx->priv_data;
-    int ratio;
     int corrected_chunk_count;
     int ret = av_image_check_size(avctx->width, avctx->height, 0, avctx);
 
@@ -529,22 +535,22 @@ static av_cold int hap_init(AVCodecContext *avctx)
 
     switch (ctx->opt_tex_fmt) {
     case HAP_FMT_RGBDXT1:
-        ratio = 8;
+        ctx->enc.tex_ratio = 8;
         avctx->codec_tag = MKTAG('H', 'a', 'p', '1');
         avctx->bits_per_coded_sample = 24;
-        ctx->tex_fun = ctx->dxtc.dxt1_block;
+        ctx->enc.tex_funct = ctx->dxtc.dxt1_block;
         break;
     case HAP_FMT_RGBADXT5:
-        ratio = 4;
+        ctx->enc.tex_ratio = 16;
         avctx->codec_tag = MKTAG('H', 'a', 'p', '5');
         avctx->bits_per_coded_sample = 32;
-        ctx->tex_fun = ctx->dxtc.dxt5_block;
+        ctx->enc.tex_funct = ctx->dxtc.dxt5_block;
         break;
     case HAP_FMT_YCOCGDXT5:
-        ratio = 4;
+        ctx->enc.tex_ratio = 16;
         avctx->codec_tag = MKTAG('H', 'a', 'p', 'Y');
         avctx->bits_per_coded_sample = 24;
-        ctx->tex_fun = ctx->dxtc.dxt5ys_block;
+        ctx->enc.tex_funct = ctx->dxtc.dxt5ys_block;
         break;
     case HAP_FMT_BPTC:
         ratio = 4;
@@ -556,11 +562,13 @@ static av_cold int hap_init(AVCodecContext *avctx)
         av_log(avctx, AV_LOG_ERROR, "Invalid format %02X\n", ctx->opt_tex_fmt);
         return AVERROR_INVALIDDATA;
     }
+    ctx->enc.raw_ratio = 16;
+    ctx->enc.slice_count = av_clip(avctx->thread_count, 1, avctx->height / TEXTURE_BLOCK_H);
 
-    /* Texture compression ratio is constant, so can we computer
+    /* Texture compression ratio is constant, so can we compute
      * beforehand the final size of the uncompressed buffer. */
-    ctx->tex_size   = FFALIGN(avctx->width,  TEXTURE_BLOCK_W) *
-                      FFALIGN(avctx->height, TEXTURE_BLOCK_H) * 4 / ratio;
+    ctx->tex_size   = avctx->width  / TEXTURE_BLOCK_W *
+                      avctx->height / TEXTURE_BLOCK_H * ctx->enc.tex_ratio;
 
     switch (ctx->opt_compressor) {
     case HAP_COMP_NONE:
@@ -579,7 +587,7 @@ static av_cold int hap_init(AVCodecContext *avctx)
         else {
             /* Round the chunk count to divide evenly on DXT block edges */
             corrected_chunk_count = av_clip(ctx->opt_chunk_count, 1, HAP_SNAPPY_MAX_CHUNKS);
-            while ((ctx->tex_size / (64 / ratio)) % corrected_chunk_count != 0) {
+        while ((ctx->tex_size / ctx->enc.tex_ratio) % corrected_chunk_count != 0) {
                 corrected_chunk_count--;
             }
             ctx->max_compressed = snappy_max_compressed_length(ctx->tex_size / corrected_chunk_count);
@@ -676,21 +684,21 @@ static const AVClass hapenc_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-AVCodec ff_hap_encoder = {
-    .name           = "hap",
-    .long_name      = NULL_IF_CONFIG_SMALL("Vidvox Hap"),
-    .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = AV_CODEC_ID_HAP,
+const FFCodec ff_hap_encoder = {
+    .p.name         = "hap",
+    CODEC_LONG_NAME("Vidvox Hap"),
+    .p.type         = AVMEDIA_TYPE_VIDEO,
+    .p.id           = AV_CODEC_ID_HAP,
+    .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_SLICE_THREADS,
     .priv_data_size = sizeof(HapContext),
-    .priv_class     = &hapenc_class,
+    .p.priv_class   = &hapenc_class,
     .init           = hap_init,
-    .encode2        = hap_encode,
+    FF_CODEC_ENCODE_CB(hap_encode),
 	.capabilities   = AV_CODEC_CAP_FRAME_THREADS | AV_CODEC_CAP_INTRA_ONLY,
     .close          = hap_close,
-    .pix_fmts       = (const enum AVPixelFormat[]) {
+    .p.pix_fmts     = (const enum AVPixelFormat[]) {
 		/// TODO: No accelerated colorspace conversion found from yuv420p to rgba
         AV_PIX_FMT_RGBA, AV_PIX_FMT_NONE,
     },
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE |
-                      FF_CODEC_CAP_INIT_CLEANUP,
+    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
 };

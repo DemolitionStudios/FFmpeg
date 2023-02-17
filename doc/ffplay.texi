@@ -34,10 +34,6 @@ various FFmpeg APIs.
 Force displayed width.
 @item -y @var{height}
 Force displayed height.
-@item -s @var{size}
-Set frame size (WxH or abbreviation), needed for videos which do
-not contain a header with the frame size like raw YUV.  This option
-has been deprecated in favor of private options, try -video_size.
 @item -fs
 Start in fullscreen mode.
 @item -an
@@ -126,15 +122,12 @@ Read @var{input_url}.
 
 @section Advanced options
 @table @option
-@item -pix_fmt @var{format}
-Set pixel format.
-This option has been deprecated in favor of private options, try -pixel_format.
-
 @item -stats
 Print several playback statistics, in particular show the stream
 duration, the codec parameters, the current position in the stream and
-the audio/video synchronisation drift. It is on by default, to
-explicitly disable it you need to specify @code{-nostats}.
+the audio/video synchronisation drift. It is shown by default, unless the
+log level is lower than @code{info}. Its display can be forced by manually
+specifying this option. To disable it, you need to specify @code{-nostats}.
 
 @item -fast
 Non-spec-compliant optimizations.
@@ -221,8 +214,6 @@ Pause.
 Toggle mute.
 
 @item 9, 0
-Decrease and increase volume respectively.
-
 @item /, *
 Decrease and increase volume respectively.
 
@@ -294,6 +285,7 @@ Toggle full screen.
 @ifset config-avfilter
 @include filters.texi
 @end ifset
+@include general_contents.texi
 @end ifset
 
 @chapter See Also
