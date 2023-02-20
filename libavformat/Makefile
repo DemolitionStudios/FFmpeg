@@ -717,7 +717,7 @@ SHLIBOBJS-$(CONFIG_SPDIF_MUXER)          += dca_sample_rate_tab.o
 # libavdevice dependencies
 
 # Windows resource file
-SHLIBOBJS-$(HAVE_GNU_WINDRES)            += avformatres.o
+SLIBOBJS-$(HAVE_GNU_WINDRES)             += avformatres.o
 
 SKIPHEADERS-$(CONFIG_IMF_DEMUXER)        += imf.h
 SKIPHEADERS-$(CONFIG_FFRTMPCRYPT_PROTOCOL) += rtmpdh.h

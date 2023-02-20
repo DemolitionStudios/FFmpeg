@@ -203,7 +203,7 @@ OBJS-$(!CONFIG_VULKAN)                  += hwcontext_stub.o
 OBJS += $(COMPAT_OBJS:%=../compat/%)
 
 # Windows resource file
-SHLIBOBJS-$(HAVE_GNU_WINDRES)           += avutilres.o
+SLIBOBJS-$(HAVE_GNU_WINDRES)            += avutilres.o
 
 SKIPHEADERS                            += objc.h
 SKIPHEADERS-$(HAVE_CUDA_H)             += hwcontext_cuda.h

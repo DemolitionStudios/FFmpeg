@@ -26,7 +26,7 @@ OBJS = alphablend.o                                     \
 SHLIBOBJS                    += log2_tab.o
 
 # Windows resource file
-SHLIBOBJS-$(HAVE_GNU_WINDRES) += swscaleres.o
+SLIBOBJS-$(HAVE_GNU_WINDRES) += swscaleres.o
 
 TESTPROGS = colorspace                                                  \
             floatimg_cmp                                                \
