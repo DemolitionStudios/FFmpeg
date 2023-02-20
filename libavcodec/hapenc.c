@@ -32,7 +32,7 @@
 #include <stdint.h>
 #include "snappy-c.h"
 #include "gdeflate-c.h"
-#include "compressonator.h"
+//#include "compressonator.h"
 #include "bc7e_ispc.h"
 
 #include "libavutil/frame.h"
@@ -53,9 +53,9 @@
 #define GDEFLATE_NUM_THREADS 32
 
 // Setup Static Host Pluging Libs
-extern void CMP_RegisterHostPlugins();
-
-static CMP_MipSet srcMipSet;
+//extern void CMP_RegisterHostPlugins();
+//
+//static CMP_MipSet srcMipSet;
 
 enum HapHeaderLength {
     /* Short header: four bytes with a 24 bit size value */
@@ -69,37 +69,37 @@ static bool hap_is_fixed_chunk_size(HapContext* ctx)
     return ctx->opt_chunk_count < 0;
 }
 
-static int target_foramt_to_compressonator(int format)
-{
-	switch (format) {
-	case HAP_FMT_RGBDXT1:
-		return CMP_FORMAT_BC1;
-	case HAP_FMT_RGBADXT5:
-		return CMP_FORMAT_DXT5;
-	case HAP_FMT_YCOCGDXT5:
-		return CMP_FORMAT_Unknown; // TODO
-	case HAP_FMT_BPTC:
-		return CMP_FORMAT_BC7;
-	default:
-		return CMP_FORMAT_Unknown;
-	}
-}
-
-static CMP_DWORD target_format_to_fourcc(int format)
-{
-	switch (format) {
-	case HAP_FMT_RGBDXT1:
-		return CMP_MAKEFOURCC('D', 'X', 'T', '1');
-	case HAP_FMT_RGBADXT5:
-		return CMP_MAKEFOURCC('D', 'X', 'T', '5');
-	case HAP_FMT_YCOCGDXT5:
-		return CMP_FORMAT_Unknown; // TODO
-	case HAP_FMT_BPTC:
-		return CMP_MAKEFOURCC('B', 'C', '7', 'x');
-	default:
-		return 0;
-	}
-}
+//static int target_foramt_to_compressonator(int format)
+//{
+//	switch (format) {
+//	case HAP_FMT_RGBDXT1:
+//		return CMP_FORMAT_BC1;
+//	case HAP_FMT_RGBADXT5:
+//		return CMP_FORMAT_DXT5;
+//	case HAP_FMT_YCOCGDXT5:
+//		return CMP_FORMAT_Unknown; // TODO
+//	case HAP_FMT_BPTC:
+//		return CMP_FORMAT_BC7;
+//	default:
+//		return CMP_FORMAT_Unknown;
+//	}
+//}
+//
+//static CMP_DWORD target_format_to_fourcc(int format)
+//{
+//	switch (format) {
+//	case HAP_FMT_RGBDXT1:
+//		return CMP_MAKEFOURCC('D', 'X', 'T', '1');
+//	case HAP_FMT_RGBADXT5:
+//		return CMP_MAKEFOURCC('D', 'X', 'T', '5');
+//	case HAP_FMT_YCOCGDXT5:
+//		return CMP_FORMAT_Unknown; // TODO
+//	case HAP_FMT_BPTC:
+//		return CMP_MAKEFOURCC('B', 'C', '7', 'x');
+//	default:
+//		return 0;
+//	}
+//}
 
 // FPS
 // 
