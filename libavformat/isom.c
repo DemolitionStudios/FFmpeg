@@ -71,9 +71,6 @@ const AVCodecTag ff_mp4_obj_type[] = {
     { AV_CODEC_ID_NONE        ,    0 },
 };
 
-    { AV_CODEC_ID_HAP, MKTAG('H', 'a', 'p', 'A') },
-    { AV_CODEC_ID_HAP, MKTAG('H', 'a', 'p', '7') },
-    { AV_CODEC_ID_HAP, MKTAG('H', 'a', 'p', 'H') },
 const AVCodecTag ff_codec_movsubtitle_tags[] = {
     { AV_CODEC_ID_MOV_TEXT, MKTAG('t', 'e', 'x', 't') },
     { AV_CODEC_ID_MOV_TEXT, MKTAG('t', 'x', '3', 'g') },

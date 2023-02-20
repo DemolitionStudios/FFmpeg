@@ -124,13 +124,6 @@ static int compress_texture(AVCodecContext *avctx, uint8_t *out, int out_length,
     if (ctx->tex_size > out_length)
         return AVERROR_BUFFER_TOO_SMALL;
         
-    // New code!    
-    ctx->enc.tex_data.out = out;
-    ctx->enc.frame_data.in = f->data[0];
-    ctx->enc.stride = f->linesize[0];
-    avctx->execute2(avctx, ff_texturedsp_compress_thread, &ctx->enc, NULL, ctx->enc.slice_count);
-    // End of new code!	
-
 	/// TODO: alternate between CPU / GPU compress threads to utilize both (not a good idea probably, as the encoding algorithm will differ)
 //	if (ctx->gpu_encoding_1st_stage)
 //	{
@@ -223,7 +216,7 @@ static int compress_texture(AVCodecContext *avctx, uint8_t *out, int out_length,
 //	else
 	{
 		/// TODO: cpu isn't used at 100% now even with 64 threads. Wtf??
-		if (ctx->opt_tex_fmt == HAP_FMT_BPTC && ctx->gpu_encoding_1st_stage) {
+		if (ctx->opt_tex_fmt == HAP_FMT_BPTC) {
 			// https://github.com/GPUOpen-Tools/compressonator/blob/815d1b6fa01223cdbeb3e399e56b44e5c10fcdd7/cmp_compressonatorlib/buffer/codecbuffer_rgba8888.cpp
 			/// TODO: make a special "color space" for it. so we transform directly from 420p->blocks
 			/// TODO: or in-place conversion to save memory while using threads, cache only transformed 4-pixel rows
@@ -250,14 +243,10 @@ static int compress_texture(AVCodecContext *avctx, uint8_t *out, int out_length,
 
 			av_free(blocks);
 		} else {
-			/// TODO: use https://github.com/richgel999/bc7enc_rdo (faster + better quality + optimized for lossless compression)
-			for (j = 0; j < avctx->height; j += 4) {
-				for (i = 0; i < avctx->width; i += 4) {
-					uint8_t* p = f->data[0] + i * 4 + j * f->linesize[0];
-					const int step = ctx->tex_fun(out, f->linesize[0], p);
-					out += step;
-				}
-			}
+			ctx->enc.tex_data.out = out;
+			ctx->enc.frame_data.in = f->data[0];
+			ctx->enc.stride = f->linesize[0];
+			avctx->execute2(avctx, ff_texturedsp_compress_thread, &ctx->enc, NULL, ctx->enc.slice_count);
 		}
 	}
 
@@ -553,10 +542,10 @@ static av_cold int hap_init(AVCodecContext *avctx)
         ctx->enc.tex_funct = ctx->dxtc.dxt5ys_block;
         break;
     case HAP_FMT_BPTC:
-        ratio = 4;
+        ctx->enc.tex_ratio = 16;
         avctx->codec_tag = MKTAG('H', 'a', 'p', '7');
         avctx->bits_per_coded_sample = 32;
-        ctx->tex_fun = ctx->bc7c.bc7enc16_block;
+        ctx->enc.tex_funct = ctx->bc7c.bc7enc16_block;
         break;
     default:
         av_log(avctx, AV_LOG_ERROR, "Invalid format %02X\n", ctx->opt_tex_fmt);
@@ -689,12 +678,12 @@ const FFCodec ff_hap_encoder = {
     CODEC_LONG_NAME("Vidvox Hap"),
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_HAP,
-    .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_SLICE_THREADS,
+    .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_SLICE_THREADS | AV_CODEC_CAP_INTRA_ONLY,
     .priv_data_size = sizeof(HapContext),
     .p.priv_class   = &hapenc_class,
     .init           = hap_init,
     FF_CODEC_ENCODE_CB(hap_encode),
-	.capabilities   = AV_CODEC_CAP_FRAME_THREADS | AV_CODEC_CAP_INTRA_ONLY,
+///.capabilities   = AV_CODEC_CAP_FRAME_THREADS | AV_CODEC_CAP_INTRA_ONLY,
     .close          = hap_close,
     .p.pix_fmts     = (const enum AVPixelFormat[]) {
 		/// TODO: No accelerated colorspace conversion found from yuv420p to rgba
