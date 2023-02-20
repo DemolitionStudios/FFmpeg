@@ -351,46 +351,6 @@ static av_cold int hap_init(AVCodecContext *avctx)
 	//bc7e_compress_block_params_init_slow(&ctx->bc7e_params, true /* perceptual */);
 	//bc7e_compress_block_params_init_slowest(&ctx->bc7e_params, true /* perceptual */);
 	/*bc7e_compress_block_params_init_veryfast*/(&ctx->bc7e_params, true /* perceptual */);
-	//CMP_InitFramework(); // Calls CMP_RegisterHostPlugins()
-	// CMP_SetComputeOptions: force rebuild shaders
-
-#if 0
-	if (ctx->gpu_encoding_1st_stage)
-	{
-		memset(&srcMipSet, 0, sizeof(CMP_MipSet));
-		if (avctx->width == 1920) {
-			if (CMP_LoadTexture("C:\\Users\\lev\\Desktop\\1080p.png", &srcMipSet) != CMP_OK) {
-				av_log(avctx, AV_LOG_ERROR, "Error: Loading source file!\n");
-				return -1;
-			}
-		}
-		else if (avctx->width == 8192) {
-			if (CMP_LoadTexture("C:\\Users\\lev\\Desktop\\8192x8192.png", &srcMipSet) != CMP_OK) {
-				av_log(avctx, AV_LOG_ERROR, "Error: Loading source file!\n");
-				return -1;
-			}
-		}
-
-
-		//-----------------------------------------------------
-		// when using GPU: The texture must have width and height as a multiple of 4
-		// Check texture for width and height
-		//-----------------------------------------------------
-		if ((srcMipSet.m_nWidth % 4) > 0 || (srcMipSet.m_nHeight % 4) > 0) {
-			av_log(avctx, AV_LOG_ERROR, "Error: Texture width and height must be multiple of 4\n");
-			return -1;
-		}
-
-
-		//----------------------------------
-		// Check we have a image  buffer
-		//----------------------------------
-		if (srcMipSet.pData == NULL) {
-			av_log(avctx, AV_LOG_ERROR, "Error: Texture buffer was not allocated\n");
-			return -1;
-		}
-	}
-#endif
 
     switch (ctx->opt_tex_fmt) {
     case HAP_FMT_RGBDXT1:
