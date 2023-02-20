@@ -269,7 +269,6 @@ External library support:
   --enable-libsmbclient    enable Samba protocol via libsmbclient [no]
   --enable-libsnappy       enable Snappy compression, needed for hap encoding [no]
   --enable-libgdeflate     enable GDeflate compression, needed for hap encoding [no]
-  --enable-libcompressonator enable AMD Compressonator integration, needed for hap encoding [no]
   --enable-bc7e            bc7e integration, needed for hap encoding [no]
   --enable-libsoxr         enable Include libsoxr resampling [no]
   --enable-libspeex        enable Speex de/encoding via libspeex [no]
@@ -1851,7 +1850,6 @@ EXTERNAL_LIBRARY_LIST="
     libsmbclient
     libsnappy
 	libgdeflate
-    libcompressonator
     libbc7e
     libsoxr
     libspeex
@@ -2835,7 +2833,7 @@ h263p_encoder_select="h263_encoder"
 h264_decoder_select="cabac golomb h264chroma h264dsp h264parse h264pred h264qpel h264_sei videodsp"
 h264_decoder_suggest="error_resilience"
 hap_decoder_select="snappy texturedsp"
-hap_encoder_deps="libsnappy libgdeflate libcompressonator libbc7e"
+hap_encoder_deps="libsnappy libgdeflate libbc7e"
 hevc_decoder_select="bswapdsp cabac dovi_rpu golomb hevcparse hevc_sei videodsp"
 hap_encoder_select="texturedspenc bc7enc16"
 huffyuv_decoder_select="bswapdsp huffyuvdsp llviddsp"
@@ -6673,7 +6671,6 @@ enabled libsmbclient      && { check_pkg_config libsmbclient smbclient libsmbcli
                                require libsmbclient libsmbclient.h smbc_init -lsmbclient; }
 enabled libsnappy         && require libsnappy snappy-c.h snappy_compress -lsnappy64 -lstdc++
 enabled libgdeflate       && require libgdeflate gdeflate-c.h gdeflate_compress -lGDeflate -ldeflate -lstdc++
-enabled libcompressonator && require libcompressonator compressonator.h CMP_ProcessTexture -lCMP_Framework_MT -lOle32
 enabled libbc7e           && require libbc7e bc7e_ispc.h bc7e_compress_blocks -lbc7e
 enabled libsoxr           && require libsoxr soxr.h soxr_create -lsoxr
 enabled libssh            && require_pkg_config libssh libssh libssh/sftp.h sftp_init
