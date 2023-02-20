@@ -32,7 +32,6 @@
 #include <stdint.h>
 #include "snappy-c.h"
 #include "gdeflate-c.h"
-//#include "compressonator.h"
 #include "bc7e_ispc.h"
 
 #include "libavutil/frame.h"
@@ -52,11 +51,6 @@
 
 #define GDEFLATE_NUM_THREADS 32
 
-// Setup Static Host Pluging Libs
-//extern void CMP_RegisterHostPlugins();
-//
-//static CMP_MipSet srcMipSet;
-
 enum HapHeaderLength {
     /* Short header: four bytes with a 24 bit size value */
     HAP_HDR_SHORT = 4,
@@ -68,38 +62,6 @@ static bool hap_is_fixed_chunk_size(HapContext* ctx)
 {
     return ctx->opt_chunk_count < 0;
 }
-
-//static int target_foramt_to_compressonator(int format)
-//{
-//	switch (format) {
-//	case HAP_FMT_RGBDXT1:
-//		return CMP_FORMAT_BC1;
-//	case HAP_FMT_RGBADXT5:
-//		return CMP_FORMAT_DXT5;
-//	case HAP_FMT_YCOCGDXT5:
-//		return CMP_FORMAT_Unknown; // TODO
-//	case HAP_FMT_BPTC:
-//		return CMP_FORMAT_BC7;
-//	default:
-//		return CMP_FORMAT_Unknown;
-//	}
-//}
-//
-//static CMP_DWORD target_format_to_fourcc(int format)
-//{
-//	switch (format) {
-//	case HAP_FMT_RGBDXT1:
-//		return CMP_MAKEFOURCC('D', 'X', 'T', '1');
-//	case HAP_FMT_RGBADXT5:
-//		return CMP_MAKEFOURCC('D', 'X', 'T', '5');
-//	case HAP_FMT_YCOCGDXT5:
-//		return CMP_FORMAT_Unknown; // TODO
-//	case HAP_FMT_BPTC:
-//		return CMP_MAKEFOURCC('B', 'C', '7', 'x');
-//	default:
-//		return 0;
-//	}
-//}
 
 // FPS
 // 
@@ -123,131 +85,39 @@ static int compress_texture(AVCodecContext *avctx, uint8_t *out, int out_length,
 
     if (ctx->tex_size > out_length)
         return AVERROR_BUFFER_TOO_SMALL;
-        
-	/// TODO: alternate between CPU / GPU compress threads to utilize both (not a good idea probably, as the encoding algorithm will differ)
-//	if (ctx->gpu_encoding_1st_stage)
-//	{
-//		struct KernelOptions kernel_options;
-//		memset(&kernel_options, 0, sizeof(struct KernelOptions));
-//
-//		kernel_options.format = target_foramt_to_compressonator(ctx->opt_tex_fmt);          // Set the format to process
-//		kernel_options.fquality = 0.05f;            // Set the quality of the result
-//		/// TODO: force using discrete GPU with special global variables
-//		kernel_options.encodeWith = CMP_CPU;         // Using OpenCL GPU Encoder, can replace with DXC for DidstMipSetrectX
-//		kernel_options.threads = 0;            // Auto setting
-//		kernel_options.height = avctx->width;
-//		kernel_options.width = avctx->height;
-//
-//		/// TODO: inspect srcMipSet and determine what's wrong
-//#if 0
-//		CMP_MipSet srcMipSet;
-//		memset(&srcMipSet, 0, sizeof(CMP_MipSet));
-//		//srcMipSet.dwSize = sizeof(srcMipSet);
-//		srcMipSet.m_nWidth = avctx->width;
-//		srcMipSet.m_nHeight = avctx->height;
-//		srcMipSet.m_nDepth = 1;
-//		srcMipSet.m_format = CMP_FORMAT_RGBA_8888;
-//		srcMipSet.dwDataSize = f->linesize[0] * avctx->height;//CMP_CalculateBufferSize(&srcMipSet); 
-//		srcMipSet.pData = (CMP_BYTE*)f->data[0];
-//
-//		srcMipSet.m_Flags = MS_FLAG_Default;
-//		srcMipSet.dwWidth = srcMipSet.m_nWidth;
-//		srcMipSet.dwHeight = srcMipSet.m_nHeight;
-//		srcMipSet.m_ChannelFormat = CF_8bit;
-//		srcMipSet.m_dwFourCC = 0;
-//		//srcMipSet.m_nMaxMipLevels = pMipSetSRC->m_nMaxMipLevels;
-//		srcMipSet.m_nMipLevels = 0;
-//		srcMipSet.m_TextureType = TT_2D;
-//#endif
-//
-//		CMP_MipSet dstMipSet;
-//		memset(&dstMipSet, 0, sizeof(CMP_MipSet));
-//#if 0
-//		dstMipSet.m_nWidth = srcMipSet.m_nWidth;
-//		dstMipSet.m_nHeight = srcMipSet.m_nHeight;
-//		dstMipSet.m_nDepth = 1;
-//		dstMipSet.m_format = target_foramt_to_compressonator(ctx->opt_tex_fmt);
-//		if (dstMipSet.m_format == CMP_FORMAT_BC7) {
-//			av_log(avctx, AV_LOG_WARNING, "CMP_FORMAT_BC7\n");
-//		}
-//		dstMipSet.dwDataSize = out_length;//CMP_CalculateBufferSize(&dstMipSet); // f->linesize[0] * avctx->height
-//		dstMipSet.pData = (CMP_BYTE*)out;
-//
-//		dstMipSet.m_Flags = MS_FLAG_Default;
-//		dstMipSet.dwWidth = dstMipSet.m_nWidth;
-//		dstMipSet.dwHeight = dstMipSet.m_nHeight;
-//		dstMipSet.m_ChannelFormat = CF_Compressed;
-//		dstMipSet.m_nBlockHeight = 4;
-//		dstMipSet.m_nBlockWidth = 4;
-//		dstMipSet.m_dwFourCC = target_format_to_fourcc(ctx->opt_tex_fmt);
-//		//dstMipSet.m_nMaxMipLevels = pMipSetSRC->m_nMaxMipLevels;
-//		dstMipSet.m_nMipLevels = 0;
-//		dstMipSet.m_TextureType = TT_2D;
-//#endif
-//		//av_log(avctx, AV_LOG_WARNING, "src datasize: %d; width: %d; height: %d\nout_length: %d\n", srcMipSet.dwDataSize, avctx->width, avctx->height, out_length);
-//
-//		//CMP_ERROR status = CMP_CompressTexture(&kernel_options, srcMipSet, dstMipSet, NULL);
-//		CMP_ERROR status = CMP_ProcessTexture(&srcMipSet, &dstMipSet, kernel_options, NULL);
-//		
-//		//if (cmp_status == CMP_ERR_FAILED_HOST_SETUP)
-//		//{
-//		//	g_CmdPrams.CompressOptions.nEncodeWith = CMP_Compute_type::CMP_CPU;
-//		//	kernel_options.encodeWith = g_CmdPrams.CompressOptions.nEncodeWith;
-//		//	memset(&mipSetCmp, 0, sizeof(CMP_MipSet));
-//		//	cmp_status = CMP_ProcessTexture(&inMips, &mipSetCmp, kernel_options, CompressionCallback);
-//		//}
-//		
-//		if (status != CMP_OK) {
-//			av_log(avctx, AV_LOG_ERROR, "CMP_CompressTexture error: %d\n", status);
-//			return -1;
-//		}
-//
-//		if (!dstMipSet.pData || dstMipSet.dwDataSize != out_length) {
-//			//av_log(avctx, AV_LOG_WARNING, "compressonator texture data_size: %d, out_length: %d\n", dstMipSet.dwDataSize, out_length);
-//			av_log(avctx, AV_LOG_WARNING, "compressonator texture data: %p\n", dstMipSet.pData);
-//			return -1;
-//		}
-//
-//		memcpy(out, dstMipSet.pData, out_length);
-//		CMP_FreeMipSet(&dstMipSet);
-//
-//		//CMP_FreeMipSet(&srcMipSet);
-//	}
-//	else
-	{
-		/// TODO: cpu isn't used at 100% now even with 64 threads. Wtf??
-		if (ctx->opt_tex_fmt == HAP_FMT_BPTC) {
-			// https://github.com/GPUOpen-Tools/compressonator/blob/815d1b6fa01223cdbeb3e399e56b44e5c10fcdd7/cmp_compressonatorlib/buffer/codecbuffer_rgba8888.cpp
-			/// TODO: make a special "color space" for it. so we transform directly from 420p->blocks
-			/// TODO: or in-place conversion to save memory while using threads, cache only transformed 4-pixel rows
-			/// TODO: + maybe use memory pool for the cached 4-pixel rows
-			uint8_t* blocks = (uint8_t*)av_malloc(f->linesize[0] * avctx->height);
-			uint8_t* blocks_ptr = blocks;
-			for (j = 0; j < avctx->height; j += 4) {
-				for (i = 0; i < avctx->width; i += 4) {
-					const uint8_t* p = f->data[0] + i * 4 + j * f->linesize[0];
-					const int block_size = 16 * 4;
-					const int block_row_size = 4 * 4;
 
-					memcpy(blocks_ptr, p, block_row_size);
-					memcpy(blocks_ptr + block_row_size, p + f->linesize[0], block_row_size);
-					memcpy(blocks_ptr + block_row_size*2, p + f->linesize[0]*2, block_row_size);
-					memcpy(blocks_ptr + block_row_size*3, p + f->linesize[0]*3, block_row_size);
+	/// TODO: cpu isn't used at 100% now even with 64 threads. Wtf??
+	if (ctx->opt_tex_fmt == HAP_FMT_BPTC) {
+		// https://github.com/GPUOpen-Tools/compressonator/blob/815d1b6fa01223cdbeb3e399e56b44e5c10fcdd7/cmp_compressonatorlib/buffer/codecbuffer_rgba8888.cpp
+		/// TODO: make a special "color space" for it. so we transform directly from 420p->blocks
+		/// TODO: or in-place conversion to save memory while using threads, cache only transformed 4-pixel rows
+		/// TODO: + maybe use memory pool for the cached 4-pixel rows
+		uint8_t* blocks = (uint8_t*)av_malloc(f->linesize[0] * avctx->height);
+		uint8_t* blocks_ptr = blocks;
+		for (j = 0; j < avctx->height; j += 4) {
+			for (i = 0; i < avctx->width; i += 4) {
+				const uint8_t* p = f->data[0] + i * 4 + j * f->linesize[0];
+				const int block_size = 16 * 4;
+				const int block_row_size = 4 * 4;
 
-					blocks_ptr += block_size;
-				}
+				memcpy(blocks_ptr, p, block_row_size);
+				memcpy(blocks_ptr + block_row_size, p + f->linesize[0], block_row_size);
+				memcpy(blocks_ptr + block_row_size*2, p + f->linesize[0]*2, block_row_size);
+				memcpy(blocks_ptr + block_row_size*3, p + f->linesize[0]*3, block_row_size);
+
+				blocks_ptr += block_size;
 			}
-
-			int num_blocks = avctx->width * avctx->height / 16;
-			bc7e_compress_blocks(num_blocks, out, blocks, &ctx->bc7e_params);
-
-			av_free(blocks);
-		} else {
-			ctx->enc.tex_data.out = out;
-			ctx->enc.frame_data.in = f->data[0];
-			ctx->enc.stride = f->linesize[0];
-			avctx->execute2(avctx, ff_texturedsp_compress_thread, &ctx->enc, NULL, ctx->enc.slice_count);
 		}
+
+		int num_blocks = avctx->width * avctx->height / 16;
+		bc7e_compress_blocks(num_blocks, out, blocks, &ctx->bc7e_params);
+
+		av_free(blocks);
+	} else {
+		ctx->enc.tex_data.out = out;
+		ctx->enc.frame_data.in = f->data[0];
+		ctx->enc.stride = f->linesize[0];
+		avctx->execute2(avctx, ff_texturedsp_compress_thread, &ctx->enc, NULL, ctx->enc.slice_count);
 	}
 
     return 0;
