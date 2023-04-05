@@ -41,9 +41,8 @@ REPO_ROOT=/d/projects/DemolitionStudios/hapunityplugin
 		--disable-debug \
         --disable-autodetect \
         --enable-gpl --enable-version3 \
-		--disable-muxers \
 		--disable-bsfs --disable-protocols --disable-indevs --disable-outdevs \
-		--disable-devices --disable-ffprobe \
+		--disable-devices --enable-ffprobe \
 		--enable-avcodec --enable-avformat --enable-swresample --enable-swscale --enable-avfilter \
 		--enable-protocol=file --enable-muxer=mov,avi,h264 \
 		--enable-filters \
@@ -58,6 +57,7 @@ REPO_ROOT=/d/projects/DemolitionStudios/hapunityplugin
         --extra-cflags="-I ${REPO_ROOT}/3rdparty/gdeflate/include" \
 		--extra-ldflags="-LIBPATH:${REPO_ROOT}/3rdparty/gdeflate/lib/x86_64" \
         --extra-cflags="-I ${REPO_ROOT}/3rdparty/ffmpeg/libavcodec/bc7e/build/include" \
-		--extra-ldflags="-LIBPATH:${REPO_ROOT}/3rdparty/ffmpeg/libavcodec/bc7e/build/lib/x86_64" \
+		--extra-ldflags="-LIBPATH:${REPO_ROOT}/3rdparty/ffmpeg/libavcodec/bc7e/build/lib/x86_64"
+        #--enable-libmp3lame --enable-libopus --enable-libtheora --enable-libtwolame --enable-libvorbis --enable-libgsm \
 		
 		
