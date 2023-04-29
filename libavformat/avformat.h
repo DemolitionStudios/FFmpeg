@@ -1811,6 +1811,13 @@ typedef struct AVFormatContext {
      */
     int max_probe_packets;
 
+	/**
+	 * Maximum packet size
+	 * - encoding: calculated from all packets
+	 * - decoding: unused
+	 */
+	int max_packet_size;
+
     /**
      * A callback for closing the streams opened with AVFormatContext.io_open().
      *

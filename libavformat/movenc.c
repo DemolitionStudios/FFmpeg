@@ -4173,10 +4173,13 @@ static int mov_write_mdta_ilst_tag(AVIOContext *pb, MOVMuxContext *mov,
     avio_wb32(pb, 0); /* size */
     ffio_wfourcc(pb, "ilst");
 
+	av_log(NULL, AV_LOG_ERROR, "t = av_dict_iterate(s->metadata, t)\n");
     while (t = av_dict_iterate(s->metadata, t)) {
         int64_t entry_pos = avio_tell(pb);
         avio_wb32(pb, 0); /* size */
         avio_wb32(pb, count); /* key */
+		//if (t->key == "max_packet_size")
+		av_log(NULL, AV_LOG_ERROR, "writing metadata %s = %s\n", t->key, t->value);
         mov_write_string_data_tag(pb, t->value, 0, 1);
         update_size(pb, entry_pos);
         count += 1;
@@ -4193,7 +4196,9 @@ static int mov_write_meta_tag(AVIOContext *pb, MOVMuxContext *mov,
     avio_wb32(pb, 0); /* size */
     ffio_wfourcc(pb, "meta");
     avio_wb32(pb, 0);
+	av_log(NULL, AV_LOG_ERROR, "Writing mov meta tag\n");
     if (mov->flags & FF_MOV_FLAG_USE_MDTA) {
+		av_log(NULL, AV_LOG_ERROR, "FF_MOV_FLAG_USE_MDTA enabled\n");
         mov_write_mdta_hdlr_tag(pb, mov, s);
         mov_write_mdta_keys_tag(pb, mov, s);
         mov_write_mdta_ilst_tag(pb, mov, s);
@@ -4487,6 +4492,8 @@ static int mov_write_moov_tag(AVIOContext *pb, MOVMuxContext *mov,
     int64_t pos = avio_tell(pb);
     avio_wb32(pb, 0); /* size placeholder*/
     ffio_wfourcc(pb, "moov");
+
+	av_log(NULL, AV_LOG_ERROR, "Writing mov moov tag\n");
 
     mov_setup_track_ids(mov, s);
 
@@ -5989,6 +5996,8 @@ int ff_mov_write_packet(AVFormatContext *s, AVPacket *pkt)
     size_t prft_size;
     uint8_t *reformatted_data = NULL;
 
+	av_log(NULL, AV_LOG_ERROR, "Next packet\n");
+
     ret = check_pkt(s, pkt);
     if (ret < 0)
         return ret;
@@ -6329,6 +6338,18 @@ static int mov_write_single_packet(AVFormatContext *s, AVPacket *pkt)
     AVCodecParameters *par = trk->par;
     int64_t frag_duration = 0;
     int size = pkt->size;
+
+	if (size > s->max_packet_size) {
+		av_log(s, AV_LOG_WARNING, "s->max_packet_size: %d\n", s->max_packet_size);
+		s->max_packet_size = size;
+
+		#define STR_SIZE 20
+		char max_packet_size_str[STR_SIZE];
+		snprintf(max_packet_size_str, STR_SIZE, "%d", size);
+		av_dict_set(&s->metadata, "max_packet_size", max_packet_size_str, 0);
+
+		av_log(s, AV_LOG_WARNING, "New max packet size: %d\n", size);
+	}
 
     int ret = check_pkt(s, pkt);
     if (ret < 0)
@@ -7653,7 +7674,11 @@ static int avif_write_trailer(AVFormatContext *s)
     uint8_t *buf;
     int buf_size, moov_size, i;
 
+	av_log(NULL, AV_LOG_ERROR, "Writing avif_write_trailer\n");
+
     if (mov->moov_written) return 0;
+
+	av_log(NULL, AV_LOG_ERROR, "Writing avif_write_trailer moov_written\n");
 
     mov->is_animated_avif = s->streams[0]->nb_frames > 1;
     if (mov->is_animated_avif && s->nb_streams > 1) {
