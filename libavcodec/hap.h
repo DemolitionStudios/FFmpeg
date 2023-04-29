@@ -92,8 +92,6 @@ typedef struct HapContext {
 
     TextureDSPThreadContext enc;
     TextureDSPThreadContext dec[2];
-
-	int gpu_encoding_1st_stage;
 } HapContext;
 
 /*

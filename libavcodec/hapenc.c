@@ -341,16 +341,16 @@ static av_cold int hap_init(AVCodecContext *avctx)
     }
 
     ff_texturedspenc_init(&ctx->dxtc);
-    ff_bc7enc16_init(&ctx->bc7c, BC7ENC16_TRUE /* perceptual */, BC7ENC16_MAX_PARTITIONS1 /* max_partitions_to_scan */, 0 /* uber_level */);
+    //ff_bc7enc16_init(&ctx->bc7c, BC7ENC16_TRUE /* perceptual */, BC7ENC16_MAX_PARTITIONS1 /* max_partitions_to_scan */, 0 /* uber_level */); // We use bc7e now
 	bc7e_compress_block_init();
-	/// TODO: compare & add 2-3 presets with parameter
+	/// TODO: compare & add 2-3 presets with quality parameter
 	bc7e_compress_block_params_init_ultrafast(&ctx->bc7e_params, true /* perceptual */);
 	//bc7e_compress_block_params_init_basic(&ctx->bc7e_params, true /* perceptual */);
 	//bc7e_compress_block_params_init_basic(&ctx->bc7e_params, true /* perceptual */);
 	//bc7e_compress_block_params_init_fast(&ctx->bc7e_params, true /* perceptual */);
 	//bc7e_compress_block_params_init_slow(&ctx->bc7e_params, true /* perceptual */);
 	//bc7e_compress_block_params_init_slowest(&ctx->bc7e_params, true /* perceptual */);
-	/*bc7e_compress_block_params_init_veryfast*/(&ctx->bc7e_params, true /* perceptual */);
+	//bc7e_compress_block_params_init_veryfast(&ctx->bc7e_params, true /* perceptual */);
 
     switch (ctx->opt_tex_fmt) {
     case HAP_FMT_RGBDXT1:
@@ -375,7 +375,7 @@ static av_cold int hap_init(AVCodecContext *avctx)
         ctx->enc.tex_ratio = 16;
         avctx->codec_tag = MKTAG('H', 'a', 'p', '7');
         avctx->bits_per_coded_sample = 32;
-        ctx->enc.tex_funct = ctx->bc7c.bc7enc16_block;
+        //ctx->enc.tex_funct = ctx->bc7c.bc7enc16_block; // We use bc7e now
         break;
     default:
         av_log(avctx, AV_LOG_ERROR, "Invalid format %02X\n", ctx->opt_tex_fmt);
@@ -474,7 +474,7 @@ static av_cold int hap_close(AVCodecContext *avctx)
       https ://github.com/mvji/SPX-GC
 
   2. Try lossless texture compression: uncompressed YUV format - good for gdeflate probably (planar)
-  3. Fix decreasing fps (initial probe loads 5s of input video)
+  3. Fix decreasing fps (initial probe loads 5s of input video - so it's expected)
   4. NotchLC capture shaders with PIX
   */
 
@@ -488,7 +488,6 @@ static const AVOption options[] = {
         { "hap_r",     "Hap R (BC7 textures)", 0, AV_OPT_TYPE_CONST, {.i64 = HAP_FMT_BPTC }, 0, 0, FLAGS, "format" },
     { "chunks", "chunk count", OFFSET(opt_chunk_count), AV_OPT_TYPE_INT, {.i64 = 1 }, -1, HAP_SNAPPY_MAX_CHUNKS, FLAGS, },
 	{ "gdeflate_level", "GDeflate compression level", OFFSET(opt_gdeflate_level), AV_OPT_TYPE_INT, {.i64 = GDeflateMinimumCompressionLevel }, GDeflateMinimumCompressionLevel, GDeflateMaximumCompressionLevel, FLAGS, },
-	{ "gpu_encoding_1st_stage", "enable gpu encoding (1st stage)", OFFSET(gpu_encoding_1st_stage), AV_OPT_TYPE_BOOL, {.i64 = 0 }, 0, 1, FLAGS, },
 	{ "compressor", "second-stage compressor", OFFSET(opt_compressor), AV_OPT_TYPE_INT, { .i64 = HAP_COMP_SNAPPY }, HAP_COMP_NONE, HAP_COMP_GDEFLATE, FLAGS, "compressor" },
         { "none",       "None", 0, AV_OPT_TYPE_CONST, { .i64 = HAP_COMP_NONE }, 0, 0, FLAGS, "compressor" },
         { "snappy",     "Snappy", 0, AV_OPT_TYPE_CONST, { .i64 = HAP_COMP_SNAPPY }, 0, 0, FLAGS, "compressor" },
@@ -508,15 +507,13 @@ const FFCodec ff_hap_encoder = {
     CODEC_LONG_NAME("Vidvox Hap"),
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_HAP,
-    .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_SLICE_THREADS | AV_CODEC_CAP_INTRA_ONLY,
+    .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS | AV_CODEC_CAP_INTRA_ONLY,
     .priv_data_size = sizeof(HapContext),
     .p.priv_class   = &hapenc_class,
     .init           = hap_init,
     FF_CODEC_ENCODE_CB(hap_encode),
-///.capabilities   = AV_CODEC_CAP_FRAME_THREADS | AV_CODEC_CAP_INTRA_ONLY,
     .close          = hap_close,
     .p.pix_fmts     = (const enum AVPixelFormat[]) {
-		/// TODO: No accelerated colorspace conversion found from yuv420p to rgba
         AV_PIX_FMT_RGBA, AV_PIX_FMT_NONE,
     },
     .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
