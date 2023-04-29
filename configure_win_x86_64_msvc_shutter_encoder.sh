@@ -1,7 +1,7 @@
 # Install & run MSYS2
 # Install cmp needed by configure script
 #	pacman -Suy
-#	pacman -S base-devel --needed 
+#	pacman -S base-devel --needed
 
 # Note: In something not working, make sure non of the paths below has changed
 
@@ -10,7 +10,7 @@
 
 # Add nasm.exe to PATH
 #	export PATH="/d/media-autobuild_suite/msys64/mingw64/bin/":$PATH
-#	or install nasm from https://www.nasm.us/pub/nasm/releasebuilds/?C=M;O=D and 
+#	or install nasm from https://www.nasm.us/pub/nasm/releasebuilds/?C=M;O=D and
 #		export PATH="/c/Program Files/NASM":$PATH
 
 # Run ./make-vs2015-x86_64-env.bat
@@ -58,6 +58,3 @@ REPO_ROOT=/d/projects/DemolitionStudios/hapunityplugin
 		--extra-ldflags="-LIBPATH:${REPO_ROOT}/3rdparty/gdeflate/lib/x86_64" \
         --extra-cflags="-I ${REPO_ROOT}/3rdparty/ffmpeg/libavcodec/bc7e/build/include" \
 		--extra-ldflags="-LIBPATH:${REPO_ROOT}/3rdparty/ffmpeg/libavcodec/bc7e/build/lib/x86_64"
-        #--enable-libmp3lame --enable-libopus --enable-libtheora --enable-libtwolame --enable-libvorbis --enable-libgsm \
-		
-		
