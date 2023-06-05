@@ -39,22 +39,35 @@ REPO_ROOT=/d/projects/DemolitionStudios/hapunityplugin
 		--enable-asm --enable-x86asm \
 		--arch=x86_64 --target-os=win64 --toolchain=msvc \
 		--disable-debug \
-        --disable-autodetect \
-        --enable-gpl --enable-version3 \
+    --disable-autodetect \
+    --enable-gpl --enable-version3 \
 		--disable-bsfs --disable-protocols --disable-indevs --disable-outdevs \
-		--disable-devices --enable-ffprobe \
+		--disable-devices \
+    --disable-encoders --disable-decoders --disable-filters --disable-muxers --disable-demuxers \
+    --enable-ffprobe \
 		--enable-avcodec --enable-avformat --enable-swresample --enable-swscale --enable-avfilter \
 		--enable-protocol=file --enable-muxer=mov,avi,h264 \
-		--enable-filters \
+		--disable-filters \
+    --enable-decoder=exr \
 		--enable-decoder=rawvideo \
 		--enable-decoder=hap \
-        --enable-encoder=hap \
-        --enable-libsnappy \
-        --enable-libgdeflate \
-        --enable-libbc7e \
+    --enable-encoder=hap \
+    --enable-libsnappy \
+    --enable-libgdeflate \
+    --enable-libbc7e \
+    --enable-libdirectxtex \
+    --enable-libgpurealtimebc6h \
+    --enable-zlib \
 		--extra-cflags="-I ${REPO_ROOT}/3rdparty/snappy-windows-1.1.1.8/include" \
 		--extra-ldflags="-LIBPATH:${REPO_ROOT}/3rdparty/snappy-windows-1.1.1.8/native" \
-        --extra-cflags="-I ${REPO_ROOT}/3rdparty/gdeflate/include" \
-		--extra-ldflags="-LIBPATH:${REPO_ROOT}/3rdparty/gdeflate/lib/x86_64" \
-        --extra-cflags="-I ${REPO_ROOT}/3rdparty/ffmpeg/libavcodec/bc7e/build/include" \
-		--extra-ldflags="-LIBPATH:${REPO_ROOT}/3rdparty/ffmpeg/libavcodec/bc7e/build/lib/x86_64"
+    --extra-cflags="-I ${REPO_ROOT}/3rdparty/gdeflate/include" \
+		--extra-ldflags="-LIBPATH:${REPO_ROOT}/3rdparty/gdeflate/lib/x64" \
+    --extra-cflags="-I ${REPO_ROOT}/3rdparty/ffmpeg/libavcodec/bc7e/build/include" \
+		--extra-ldflags="-LIBPATH:${REPO_ROOT}/3rdparty/ffmpeg/libavcodec/bc7e/build/lib/x86_64" \
+    --extra-cflags="-I ${REPO_ROOT}/3rdparty/DirectXTex/include" \
+		--extra-ldflags="-LIBPATH:${REPO_ROOT}/3rdparty/DirectXTex/lib" \
+    --extra-cflags="-I ${REPO_ROOT}/3rdparty/GPURealTimeBC6H/include" \
+		--extra-ldflags="-LIBPATH:${REPO_ROOT}/3rdparty/GPURealTimeBC6H/lib" \
+    --extra-cflags="-I ${REPO_ROOT}/3rdparty/zlib/include" \
+		--extra-ldflags="-LIBPATH:${REPO_ROOT}/3rdparty/zlib/lib" \
+    --extra-ldflags="-LIBPATH:${REPO_ROOT}/3rdparty/ffmpeg/libswscale"
