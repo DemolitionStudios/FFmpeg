@@ -33,11 +33,14 @@
 #include "snappy-c.h"
 #include "gdeflate-c.h"
 #include "bc7e_ispc.h"
+#include "DirectXTex-c.h"
+#include "GPURealTimeBC6H-c.h"
 
 #include "libavutil/frame.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/opt.h"
+#include "libswscale/swscale.h"
 
 #include "avcodec.h"
 #include "bytestream.h"
@@ -78,6 +81,63 @@ static bool hap_is_fixed_chunk_size(HapContext* ctx)
 // Compressonator DXC: 
 
 
+// Hi! I'm doing some work on the Hap encoder (hapenc.c), and need to use libswscale functions inside it (convert from GBRAPF32 format to RGBAF32 frame format for Hap HDR).
+// How do I do that properly?
+// When changing in the "configure" file
+// hap_encoder_deps = "libsnappy"
+// to
+// hap_encoder_deps = "libsnappy swscale"
+// I still get
+// hapenc.o : error LNK2001 : unresolved external symbol sws_getContext
+// error when building.Any help much appreciated
+
+#if 1
+static AVFrame* GBRAPF32toRGBAF32(AVFrame* frame) 
+{
+	int ret;
+	int width = frame->width;
+	int height = frame->height;
+	AVFrame* frameYUV = av_frame_alloc();
+	frameYUV->format = AV_PIX_FMT_RGBAF32;
+	frameYUV->width = width;
+	frameYUV->height = height;
+
+	int numBytes = av_image_get_buffer_size(AV_PIX_FMT_RGBAF32, width, height, 1);
+	uint8_t* dataBuffer = (uint8_t*)av_malloc(numBytes * sizeof(uint8_t));
+
+	frameYUV->data[0] = dataBuffer;
+	av_image_fill_arrays(frameYUV->data, frameYUV->linesize, dataBuffer, AV_PIX_FMT_RGBAF32, width, height, 1);
+
+	/// TODO: alloc context once
+	struct SwsContext* YUVScaleCtx = sws_getContext
+	(
+		width,
+		height,
+		AV_PIX_FMT_GBRAPF32,
+		width,
+		height,
+		AV_PIX_FMT_RGBAF32,
+		SWS_BILINEAR,
+		0,
+		0,
+		0
+	);
+	ret = sws_scale(
+		YUVScaleCtx,
+		(const uint8_t* const*)frame->data,
+		frame->linesize, // stride is the size of a line + potential padding for performance issue
+		0,
+		height,
+		frameYUV->data,
+		frameYUV->linesize
+	);
+	return frameYUV;
+}
+#else
+
+#endif
+
+
 static int compress_texture(AVCodecContext *avctx, uint8_t *out, int out_length, const AVFrame *f)
 {
     HapContext *ctx = avctx->priv_data;
@@ -88,6 +148,9 @@ static int compress_texture(AVCodecContext *avctx, uint8_t *out, int out_length,
 
 	/// TODO: cpu isn't used at 100% now even with 64 threads. Wtf??
 	if (ctx->opt_tex_fmt == HAP_FMT_BPTC) {
+		if (f->format != AV_PIX_FMT_RGBA)
+			return AVERROR_INVALIDDATA;
+#if 1
 		// https://github.com/GPUOpen-Tools/compressonator/blob/815d1b6fa01223cdbeb3e399e56b44e5c10fcdd7/cmp_compressonatorlib/buffer/codecbuffer_rgba8888.cpp
 		/// TODO: make a special "color space" for it. so we transform directly from 420p->blocks
 		/// TODO: or in-place conversion to save memory while using threads, cache only transformed 4-pixel rows
@@ -101,7 +164,7 @@ static int compress_texture(AVCodecContext *avctx, uint8_t *out, int out_length,
 				const int block_row_size = 4 * 4;
 
 				memcpy(blocks_ptr, p, block_row_size);
-				memcpy(blocks_ptr + block_row_size, p + f->linesize[0], block_row_size);
+				memcpy(blocks_ptr + block_row_size,   p + f->linesize[0],   block_row_size);
 				memcpy(blocks_ptr + block_row_size*2, p + f->linesize[0]*2, block_row_size);
 				memcpy(blocks_ptr + block_row_size*3, p + f->linesize[0]*3, block_row_size);
 
@@ -113,7 +176,124 @@ static int compress_texture(AVCodecContext *avctx, uint8_t *out, int out_length,
 		bc7e_compress_blocks(num_blocks, out, blocks, &ctx->bc7e_params);
 
 		av_free(blocks);
+#else
+		struct Image srcImage, dstImage;
+		srcImage.width = avctx->width;
+		srcImage.height = avctx->height;
+		srcImage.format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		srcImage.rowPitch = avctx->width * sizeof(uint8_t) * 4;
+		srcImage.slicePitch = avctx->width * avctx->height * sizeof(uint8_t) * 4;
+		float* blocks = (uint8_t*)av_malloc(srcImage.slicePitch);
+		float* blocks_ptr = blocks;
+		for (j = 0; j < avctx->height; j += 1) {
+			for (i = 0; i < avctx->width; i += 1) {
+				blocks_ptr[0] = ((float*)f->data[0])[j * avctx->width + i];
+				blocks_ptr[1] = ((float*)f->data[1])[j * avctx->width + i];
+				blocks_ptr[2] = ((float*)f->data[2])[j * avctx->width + i];
+				blocks_ptr[3] = ((float*)f->data[3])[j * avctx->width + i];
+				blocks_ptr += 4;
+			}
+		}
+		//srcImage.pixels = f->data[0];
+		srcImage.pixels = blocks;
+		uint32_t format = DXGI_FORMAT_BC7_UNORM;
+		uint32_t flags = TEX_COMPRESS_PARALLEL;
+		HRESULT result = DirectXTex_Compress(&srcImage, format, flags, TEX_THRESHOLD_DEFAULT_V, &dstImage);
+		if (FAILED(result))
+		{
+			av_log(avctx, AV_LOG_ERROR, "DirectXTex_Compress failed\n");
+			return AVERROR_BUG;
+		}
+
+		av_log(avctx, AV_LOG_ERROR, "Input image size %dx%d rowPitch %d.\n",
+			srcImage.width, srcImage.height, srcImage.rowPitch);
+		av_log(avctx, AV_LOG_ERROR, "Output bc7 image size %dx%d rowPitch %d slicePitch %d format %d.\n",
+			dstImage.width, dstImage.height, dstImage.rowPitch, dstImage.slicePitch, dstImage.format);
+		av_log(avctx, AV_LOG_ERROR, "out_length %d, .\n",
+			out_length);
+
+		memcpy(out, dstImage.pixels, out_length);
+
+		DirectXTex_FreeOutputImage(&dstImage);
+		av_free(blocks);
+#endif
+	} else if (ctx->opt_tex_fmt == HAP_FMT_BPTC_FU) {
+		if (f->format != AV_PIX_FMT_GBRAPF32) {
+			av_log(avctx, AV_LOG_ERROR, "Expected frame format: AV_PIX_FMT_GBRAPF32\n");
+			return AVERROR_INVALIDDATA;
+		}
+
+#if 0
+		// TODO: reorder
+		// TODO: try artificial image with bar
+		// TODO: check if we really get converted to float frame by size
+		// TODO: try directxtex without ffmpeg
+
+		struct Image srcImage, dstImage;
+		srcImage.width = avctx->width;
+		srcImage.height = avctx->height;
+		srcImage.format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+		srcImage.rowPitch = avctx->width * sizeof(float) * 4;
+		srcImage.slicePitch = avctx->width * avctx->height * sizeof(float) * 4;
+		float* blocks = (uint8_t*)av_malloc(srcImage.slicePitch);
+		float* blocks_ptr = blocks;
+		for (j = 0; j < avctx->height; j += 1) {
+			for (i = 0; i < avctx->width; i += 1) {
+				blocks_ptr[0] = ((float*)f->data[0])[j * avctx->width + i];
+				blocks_ptr[1] = ((float*)f->data[1])[j * avctx->width + i];
+				blocks_ptr[2] = ((float*)f->data[2])[j * avctx->width + i];
+				blocks_ptr[3] = ((float*)f->data[3])[j * avctx->width + i];
+				blocks_ptr += 4;
+			}
+		}
+		//srcImage.pixels = f->data[0];
+		srcImage.pixels = blocks;
+		uint32_t format = DXGI_FORMAT_BC6H_UF16;
+		uint32_t flags = TEX_COMPRESS_PARALLEL;
+		HRESULT result = DirectXTex_Compress(&srcImage, format, flags, TEX_THRESHOLD_DEFAULT_V, &dstImage);
+		if (FAILED(result))
+		{
+			av_log(avctx, AV_LOG_ERROR, "DirectXTex_Compress failed\n");
+			return AVERROR_BUG;
+		}
+
+		av_log(avctx, AV_LOG_ERROR, "Input image size %dx%d rowPitch %d.\n",
+			srcImage.width, srcImage.height, srcImage.rowPitch);
+		av_log(avctx, AV_LOG_ERROR, "Output bc6h image size %dx%d rowPitch %d slicePitch %d format %d.\n",
+			dstImage.width, dstImage.height, dstImage.rowPitch, dstImage.slicePitch, dstImage.format);
+		av_log(avctx, AV_LOG_ERROR, "out_length %d, .\n",
+			out_length);
+
+		memcpy(out, dstImage.pixels, out_length);
+
+		DirectXTex_FreeOutputImage(&dstImage);
+		av_free(blocks);
+#else
+		AVFrame* rgbaf32frame = GBRAPF32toRGBAF32(f);
+
+		GPURealTimeBC6H_Image srcImage;
+		srcImage.width = avctx->width;
+		srcImage.height = avctx->height;
+		srcImage.data = rgbaf32frame->data[0];
+		srcImage.dataSize = srcImage.width * avctx->height * sizeof(float) * 4;
+
+		uint32_t srcFormat = GPURealTimeBC6H_ImageFormat_RGBA;
+		GPURealTimeBC6H_Image dstImage;
+		bool ok = GPURealTimeBC6H_Compress(&srcImage, srcFormat, &dstImage);
+		if (!ok) {
+			av_log(avctx, AV_LOG_ERROR, "GPURealTimeBC6H_Compress error.\n");
+			return AVERROR_BUG;
+		}
+		// TODO: make no memcpy (provide buffer)
+		memcpy(out, dstImage.data, out_length);
+
+		GPURealTimeBC6H_FreeImage(&dstImage);
+
+#endif
 	} else {
+		if (f->format != AV_PIX_FMT_RGBA)
+			return AVERROR_INVALIDDATA;
+
 		ctx->enc.tex_data.out = out;
 		ctx->enc.frame_data.in = f->data[0];
 		ctx->enc.stride = f->linesize[0];
@@ -341,17 +521,7 @@ static av_cold int hap_init(AVCodecContext *avctx)
     }
 
     ff_texturedspenc_init(&ctx->dxtc);
-    //ff_bc7enc16_init(&ctx->bc7c, BC7ENC16_TRUE /* perceptual */, BC7ENC16_MAX_PARTITIONS1 /* max_partitions_to_scan */, 0 /* uber_level */); // We use bc7e now
-	bc7e_compress_block_init();
-	/// TODO: compare & add 2-3 presets with quality parameter
-	bc7e_compress_block_params_init_ultrafast(&ctx->bc7e_params, true /* perceptual */);
-	//bc7e_compress_block_params_init_basic(&ctx->bc7e_params, true /* perceptual */);
-	//bc7e_compress_block_params_init_basic(&ctx->bc7e_params, true /* perceptual */);
-	//bc7e_compress_block_params_init_fast(&ctx->bc7e_params, true /* perceptual */);
-	//bc7e_compress_block_params_init_slow(&ctx->bc7e_params, true /* perceptual */);
-	//bc7e_compress_block_params_init_slowest(&ctx->bc7e_params, true /* perceptual */);
-	//bc7e_compress_block_params_init_veryfast(&ctx->bc7e_params, true /* perceptual */);
-
+    
     switch (ctx->opt_tex_fmt) {
     case HAP_FMT_RGBDXT1:
         ctx->enc.tex_ratio = 8;
@@ -376,7 +546,25 @@ static av_cold int hap_init(AVCodecContext *avctx)
         avctx->codec_tag = MKTAG('H', 'a', 'p', '7');
         avctx->bits_per_coded_sample = 32;
         //ctx->enc.tex_funct = ctx->bc7c.bc7enc16_block; // We use bc7e now
+
+		//ff_bc7enc16_init(&ctx->bc7c, BC7ENC16_TRUE /* perceptual */, BC7ENC16_MAX_PARTITIONS1 /* max_partitions_to_scan */, 0 /* uber_level */); // We use bc7e now
+		bc7e_compress_block_init();
+		/// TODO: compare & add 2-3 presets with quality parameter
+		bc7e_compress_block_params_init_ultrafast(&ctx->bc7e_params, true /* perceptual */);
+		//bc7e_compress_block_params_init_basic(&ctx->bc7e_params, true /* perceptual */);
+		//bc7e_compress_block_params_init_basic(&ctx->bc7e_params, true /* perceptual */);
+		//bc7e_compress_block_params_init_fast(&ctx->bc7e_params, true /* perceptual */);
+		//bc7e_compress_block_params_init_slow(&ctx->bc7e_params, true /* perceptual */);
+		//bc7e_compress_block_params_init_slowest(&ctx->bc7e_params, true /* perceptual */);
+		//bc7e_compress_block_params_init_veryfast(&ctx->bc7e_params, true /* perceptual */);
         break;
+	case HAP_FMT_BPTC_FU:
+		ctx->enc.tex_ratio = 16;
+		avctx->codec_tag = MKTAG('H', 'a', 'p', 'H');
+		avctx->bits_per_coded_sample = 32;
+
+		GPURealTimeBC6H_Initialize(GPURealTimeBC6H_Preset_Speed);
+		break;
     default:
         av_log(avctx, AV_LOG_ERROR, "Invalid format %02X\n", ctx->opt_tex_fmt);
         return AVERROR_INVALIDDATA;
@@ -448,6 +636,10 @@ static av_cold int hap_close(AVCodecContext *avctx)
 {
     HapContext *ctx = avctx->priv_data;
 
+	if (ctx->opt_tex_fmt == HAP_FMT_BPTC_FU) {
+		GPURealTimeBC6H_Release();
+	}
+
     ff_hap_free_context(ctx);
 
     return 0;
@@ -481,12 +673,13 @@ static av_cold int hap_close(AVCodecContext *avctx)
 #define OFFSET(x) offsetof(HapContext, x)
 #define FLAGS     AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM
 static const AVOption options[] = {
-    { "format", NULL, OFFSET(opt_tex_fmt), AV_OPT_TYPE_INT, { .i64 = HAP_FMT_RGBDXT1 }, HAP_FMT_RGBDXT1, HAP_FMT_YCOCGDXT5, FLAGS, "format" },
+    { "format", NULL, OFFSET(opt_tex_fmt), AV_OPT_TYPE_INT, { .i64 = HAP_FMT_RGBDXT1 }, HAP_FMT_RGTC1, HAP_FMT_YCOCGDXT5, FLAGS, "format" },
         { "hap",       "Hap 1 (DXT1 textures)", 0, AV_OPT_TYPE_CONST, { .i64 = HAP_FMT_RGBDXT1   }, 0, 0, FLAGS, "format" },
         { "hap_alpha", "Hap Alpha (DXT5 textures)", 0, AV_OPT_TYPE_CONST, { .i64 = HAP_FMT_RGBADXT5  }, 0, 0, FLAGS, "format" },
         { "hap_q",     "Hap Q (DXT5-YCoCg textures)", 0, AV_OPT_TYPE_CONST, {.i64 = HAP_FMT_YCOCGDXT5 }, 0, 0, FLAGS, "format" },
         { "hap_r",     "Hap R (BC7 textures)", 0, AV_OPT_TYPE_CONST, {.i64 = HAP_FMT_BPTC }, 0, 0, FLAGS, "format" },
-    { "chunks", "chunk count", OFFSET(opt_chunk_count), AV_OPT_TYPE_INT, {.i64 = 1 }, -1, HAP_SNAPPY_MAX_CHUNKS, FLAGS, },
+		{ "hap_h",     "Hap HDR (BC6H textures)", 0, AV_OPT_TYPE_CONST, {.i64 = HAP_FMT_BPTC_FU }, 0, 0, FLAGS, "format" },
+	{ "chunks", "chunk count", OFFSET(opt_chunk_count), AV_OPT_TYPE_INT, {.i64 = 1 }, -1, HAP_SNAPPY_MAX_CHUNKS, FLAGS, },
 	{ "gdeflate_level", "GDeflate compression level", OFFSET(opt_gdeflate_level), AV_OPT_TYPE_INT, {.i64 = GDeflateMinimumCompressionLevel }, GDeflateMinimumCompressionLevel, GDeflateMaximumCompressionLevel, FLAGS, },
 	{ "compressor", "second-stage compressor", OFFSET(opt_compressor), AV_OPT_TYPE_INT, { .i64 = HAP_COMP_SNAPPY }, HAP_COMP_NONE, HAP_COMP_GDEFLATE, FLAGS, "compressor" },
         { "none",       "None", 0, AV_OPT_TYPE_CONST, { .i64 = HAP_COMP_NONE }, 0, 0, FLAGS, "compressor" },
@@ -514,7 +707,7 @@ const FFCodec ff_hap_encoder = {
     FF_CODEC_ENCODE_CB(hap_encode),
     .close          = hap_close,
     .p.pix_fmts     = (const enum AVPixelFormat[]) {
-        AV_PIX_FMT_RGBA, AV_PIX_FMT_NONE,
+        AV_PIX_FMT_RGBA, AV_PIX_FMT_GBRAPF32, AV_PIX_FMT_NONE,
     },
     .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
 };
