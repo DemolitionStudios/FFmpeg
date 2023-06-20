@@ -5,6 +5,8 @@
 
 # Note: In something not working, make sure non of the paths below has changed
 
+# cd <the location of this file> 
+# for example
 # cd /c/Users/lev/projects/UnityHapPlugin/hapunityplugin/3rdparty/ffmpeg
 # cd /d/projects/DemolitionStudios/hapunityplugin/3rdparty/ffmpeg
 
@@ -23,6 +25,17 @@
 # If any errors occur:
 # make SHELL="sh -x"
 
+# The directory structure should be (for historical reasons)
+# .../hapunityplugin
+# .../hapunityplugin/3rdparty/
+# .../hapunityplugin/3rdparty/ffmpeg # <-- where this file is located
+# .../hapunityplugin/3rdparty/snappy-windows-1.1.1.8
+# .../hapunityplugin/3rdparty/gdeflate
+# .../hapunityplugin/3rdparty/DirectXTex
+# .../hapunityplugin/3rdparty/GPURealTimeBC6H
+# .../hapunityplugin/3rdparty/zlib
+
+# Set the hapunityplugin folder location below
 #REPO_ROOT=/c/Users/lev/projects/UnityHapPlugin/hapunityplugin
 REPO_ROOT=/d/projects/DemolitionStudios/hapunityplugin
 
