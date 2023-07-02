@@ -98,14 +98,12 @@ static AVFrame* toRGBAF32(AVFrame* frame)
 		frameRGBAF32->height = height;
 
 		uint8_t* dataBuffer = (uint8_t*)av_malloc(numBytes);
-
-		//av_log(NULL, AV_LOG_ERROR, "Num bytes: %d\n", numBytes);
-
 		frameRGBAF32->data[0] = dataBuffer;
 		av_image_fill_arrays(frameRGBAF32->data, frameRGBAF32->linesize, dataBuffer, AV_PIX_FMT_RGBAF32, width, height, 1);
 	}
 
 #if 1
+	// Note: alpha channel is ignored in bc6 encoding, so we don't set it
 	int i, j;
 	if (frame->format == AV_PIX_FMT_RGBA) {
 		for (j = 0; j < height; j += 1) {
@@ -113,24 +111,16 @@ static AVFrame* toRGBAF32(AVFrame* frame)
 				const uint8_t* p = frame->data[0] + j * frame->linesize[0] + i * 4;
 				int offset = j * frameRGBAF32->linesize[0] + i * 4 * sizeof(float);
 
-				//if (offset + 4 * sizeof(float) < numBytes)
-				{
-					//av_log(NULL, AV_LOG_ERROR, "j: %d, i: %d, offset: %d\n", j, i, offset);
-					
-					*((float*)(frameRGBAF32->data[0] + offset) + 0) = (float)(*(p + 0)) / 255.f;
-					*((float*)(frameRGBAF32->data[0] + offset) + 1) = (float)(*(p + 1)) / 255.f;
-					*((float*)(frameRGBAF32->data[0] + offset) + 2) = (float)(*(p + 2)) / 255.f;
-					/// TODO: verify that Alpha is ignored
-					//*((float*)(frameRGBAF32->data[0] + offset) + 3) = (float)(*(p + 3));
+				*((float*)(frameRGBAF32->data[0] + offset) + 0) = (float)(*(p + 0)) / 255.f;
+				*((float*)(frameRGBAF32->data[0] + offset) + 1) = (float)(*(p + 1)) / 255.f;
+				*((float*)(frameRGBAF32->data[0] + offset) + 2) = (float)(*(p + 2)) / 255.f;
 
-					// all 1.0 = white
-					// all 0.0/0.5 = black
-					// all 0.8 = gray
-					//*((float*)(frameRGBAF32->data[0] + offset) + 0) = 0.8;
-					//*((float*)(frameRGBAF32->data[0] + offset) + 1) = 0.8;
-					//*((float*)(frameRGBAF32->data[0] + offset) + 2) = 0.8;
-					//*((float*)(frameRGBAF32->data[0] + offset) + 3) = 0.0;
-				}
+				// all 1.0 = white
+				// all 0.0/0.5 = black
+				// all 0.8 = gray
+				//*((float*)(frameRGBAF32->data[0] + offset) + 0) = 0.8;
+				//*((float*)(frameRGBAF32->data[0] + offset) + 1) = 0.8;
+				//*((float*)(frameRGBAF32->data[0] + offset) + 2) = 0.8;
 			}
 		}
 		
@@ -157,16 +147,16 @@ static AVFrame* toRGBAF32(AVFrame* frame)
 	} else if (frame->format == AV_PIX_FMT_GBRAPF32) {
 		for (j = 0; j < height; j += 1) {
 			for (i = 0; i < width; i += 1) {
-				int offsetPlanar = j * frame->linesize[0] + i * sizeof(float);
 				int offset = j * frameRGBAF32->linesize[0] + i * 4 * sizeof(float);
+				int offsetPlanar = j * frame->linesize[0] + i * sizeof(float);
 
-				*((float*)(frameRGBAF32->data[0] + offset) + 0) = *((float*)(frame->data[0] + offsetPlanar)) / 255.f;
+				*((float*)(frameRGBAF32->data[0] + offset) + 0) = *((float*)(frame->data[2] + offsetPlanar)) / 255.f;
 				*((float*)(frameRGBAF32->data[0] + offset) + 1) = *((float*)(frame->data[1] + offsetPlanar)) / 255.f;
-				*((float*)(frameRGBAF32->data[0] + offset) + 2) = *((float*)(frame->data[2] + offsetPlanar)) / 255.f;
+				*((float*)(frameRGBAF32->data[0] + offset) + 2) = *((float*)(frame->data[0] + offsetPlanar)) / 255.f;
 			}
 		}
 	} else {
-		av_log(NULL, AV_LOG_ERROR, "Only supported AV_PIX_FMT_RGBA and AV_PIX_FMT_GBRAPF32\n");
+		av_log(NULL, AV_LOG_ERROR, "Only supported AV_PIX_FMT_RGBA and AV_PIX_FMT_GBRAPF32 for hap_h\n");
 	}
 #else
 	// 128bpp not supported by yuv2rgb :(
@@ -286,11 +276,6 @@ static int compress_texture(AVCodecContext *avctx, uint8_t *out, int out_length,
 		av_free(blocks);
 #endif
 	} else if (ctx->opt_tex_fmt == HAP_FMT_BPTC_FU) {
-		//if (f->format != AV_PIX_FMT_GBRAPF32) {
-		//	av_log(avctx, AV_LOG_ERROR, "AV_PIX_FMT_GBRAPF32 source format is required for Hap H\n");
-		//	return AVERROR_INVALIDDATA;
-		//}
-
 #if USE_DIRECTXTEX
 		// DirectXTex test (didn't get it to work and very slow)
 		
@@ -358,7 +343,7 @@ static int compress_texture(AVCodecContext *avctx, uint8_t *out, int out_length,
 			av_log(avctx, AV_LOG_ERROR, "GPURealTimeBC6H_Compress error");
 			return AVERROR_BUG;
 		}
-		// TODO: make no memcpy (provide buffer)
+		/// TODO: make no memcpy (provide buffer)
 		memcpy(out, dstImage.data, out_length);
 
 		GPURealTimeBC6H_FreeImage(&dstImage);
