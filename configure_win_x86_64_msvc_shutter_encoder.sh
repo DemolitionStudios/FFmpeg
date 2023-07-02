@@ -56,11 +56,10 @@ REPO_ROOT=/d/projects/DemolitionStudios/hapunityplugin
     --enable-gpl --enable-version3 \
 		--disable-bsfs --disable-protocols --disable-indevs --disable-outdevs \
 		--disable-devices \
-    --disable-encoders --disable-decoders --disable-filters --disable-muxers --disable-demuxers \
     --enable-ffprobe \
 		--enable-avcodec --enable-avformat --enable-swresample --enable-swscale --enable-avfilter \
 		--enable-protocol=file --enable-muxer=mov,avi,h264 \
-		--disable-filters \
+		--enable-filters \
     --enable-decoder=exr \
 		--enable-decoder=rawvideo \
 		--enable-decoder=hap \
