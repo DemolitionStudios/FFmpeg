@@ -68,7 +68,6 @@ REPO_ROOT=/d/projects/DemolitionStudios/hapunityplugin
     --enable-libsnappy \
     --enable-libgdeflate \
     --enable-libbc7e \
-    --enable-libdirectxtex \
     --enable-libgpurealtimebc6h \
     --enable-zlib \
 		--extra-cflags="-I ${REPO_ROOT}/3rdparty/snappy-windows-1.1.1.8/include" \
@@ -77,8 +76,6 @@ REPO_ROOT=/d/projects/DemolitionStudios/hapunityplugin
 		--extra-ldflags="-LIBPATH:${REPO_ROOT}/3rdparty/gdeflate/lib/x64" \
     --extra-cflags="-I ${REPO_ROOT}/3rdparty/ffmpeg/libavcodec/bc7e/build/include" \
 		--extra-ldflags="-LIBPATH:${REPO_ROOT}/3rdparty/ffmpeg/libavcodec/bc7e/build/lib/x86_64" \
-    --extra-cflags="-I ${REPO_ROOT}/3rdparty/DirectXTex/include" \
-		--extra-ldflags="-LIBPATH:${REPO_ROOT}/3rdparty/DirectXTex/lib" \
     --extra-cflags="-I ${REPO_ROOT}/3rdparty/GPURealTimeBC6H/include" \
 		--extra-ldflags="-LIBPATH:${REPO_ROOT}/3rdparty/GPURealTimeBC6H/lib" \
     --extra-cflags="-I ${REPO_ROOT}/3rdparty/zlib/include" \
