@@ -773,8 +773,7 @@ const FFCodec ff_hap_encoder = {
     CODEC_LONG_NAME("Vidvox Hap"),
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_HAP,
-// TODO: disable threads for HapH
-    .p.capabilities = AV_CODEC_CAP_DR1 | /*AV_CODEC_CAP_FRAME_THREADS | */AV_CODEC_CAP_INTRA_ONLY,
+    .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS | AV_CODEC_CAP_INTRA_ONLY,
     .priv_data_size = sizeof(HapContext),
     .p.priv_class   = &hapenc_class,
     .init           = hap_init,
