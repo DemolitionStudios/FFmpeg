@@ -5996,7 +5996,7 @@ int ff_mov_write_packet(AVFormatContext *s, AVPacket *pkt)
     size_t prft_size;
     uint8_t *reformatted_data = NULL;
 
-	av_log(NULL, AV_LOG_ERROR, "Next packet\n");
+	//av_log(NULL, AV_LOG_ERROR, "Next packet\n");
 
     ret = check_pkt(s, pkt);
     if (ret < 0)

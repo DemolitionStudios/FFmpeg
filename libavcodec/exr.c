@@ -2049,15 +2049,19 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *picture,
         if (s->channel_offsets[3] >= 0) {
             if (!s->is_luma) {
                 avctx->pix_fmt = AV_PIX_FMT_GBRAPF32;
+				//av_log(avctx, AV_LOG_ERROR, "AV_PIX_FMT_GBRAPF32 1\n");
             } else {
                 /* todo: change this when a floating point pixel format with luma with alpha is implemented */
                 avctx->pix_fmt = AV_PIX_FMT_GBRAPF32;
+				//av_log(avctx, AV_LOG_ERROR, "AV_PIX_FMT_GBRAPF32 2\n");
             }
         } else {
             if (!s->is_luma) {
                 avctx->pix_fmt = AV_PIX_FMT_GBRPF32;
+				//av_log(avctx, AV_LOG_ERROR, "AV_PIX_FMT_GBRPF32 1\n");
             } else {
                 avctx->pix_fmt = AV_PIX_FMT_GRAYF32;
+				//av_log(avctx, AV_LOG_ERROR, "AV_PIX_FMT_GBRPF32 2\n");
             }
         }
         break;
