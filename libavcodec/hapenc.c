@@ -103,24 +103,26 @@ static AVFrame* toRGBAF32(AVFrame* frame)
 	}
 
 #if 1
-	// Note: alpha channel is ignored in bc6 encoding, so we don't set it
+	// Note: alpha channel is ignored in bc6 encoding, so we don't set it at all
 	int i, j;
 	if (frame->format == AV_PIX_FMT_RGBA) {
 		for (j = 0; j < height; j += 1) {
 			for (i = 0; i < width; i += 1) {
-				const uint8_t* p = frame->data[0] + j * frame->linesize[0] + i * 4;
+				const uint8_t* ptrRGBA = frame->data[0] + j * frame->linesize[0] + i * 4;
 				int offset = j * frameRGBAF32->linesize[0] + i * 4 * sizeof(float);
 
-				*((float*)(frameRGBAF32->data[0] + offset) + 0) = (float)(*(p + 0)) / 255.f;
-				*((float*)(frameRGBAF32->data[0] + offset) + 1) = (float)(*(p + 1)) / 255.f;
-				*((float*)(frameRGBAF32->data[0] + offset) + 2) = (float)(*(p + 2)) / 255.f;
+				float* ptr = (float*)(frameRGBAF32->data[0] + offset);
+				ptr[0] = (float)(ptrRGBA[0] / 255.f);
+				ptr[1] = (float)(ptrRGBA[1] / 255.f);
+				ptr[2] = (float)(ptrRGBA[2] / 255.f);
 
+				// Debug
 				// all 1.0 = white
 				// all 0.0/0.5 = black
 				// all 0.8 = gray
-				//*((float*)(frameRGBAF32->data[0] + offset) + 0) = 0.8;
-				//*((float*)(frameRGBAF32->data[0] + offset) + 1) = 0.8;
-				//*((float*)(frameRGBAF32->data[0] + offset) + 2) = 0.8;
+				//ptr[0] = 0.8;
+				//ptr[1] = 0.8;
+				//ptr[2] = 0.8;
 			}
 		}
 		
@@ -150,9 +152,10 @@ static AVFrame* toRGBAF32(AVFrame* frame)
 				int offset = j * frameRGBAF32->linesize[0] + i * 4 * sizeof(float);
 				int offsetPlanar = j * frame->linesize[0] + i * sizeof(float);
 
-				*((float*)(frameRGBAF32->data[0] + offset) + 0) = *((float*)(frame->data[2] + offsetPlanar)) / 255.f;
-				*((float*)(frameRGBAF32->data[0] + offset) + 1) = *((float*)(frame->data[1] + offsetPlanar)) / 255.f;
-				*((float*)(frameRGBAF32->data[0] + offset) + 2) = *((float*)(frame->data[0] + offsetPlanar)) / 255.f;
+				float* ptr = (float*)(frameRGBAF32->data[0] + offset);
+				ptr[0] = *((float*)(frame->data[2] + offsetPlanar)) / 255.f;
+				ptr[1] = *((float*)(frame->data[1] + offsetPlanar)) / 255.f;
+				ptr[2] = *((float*)(frame->data[0] + offsetPlanar)) / 255.f;
 			}
 		}
 	} else {
