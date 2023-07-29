@@ -47,7 +47,9 @@ REPO_ROOT=/d/projects/DemolitionStudios/hapunityplugin
 
         #--windres=/C/msys64/mingw64/bin/windres.exe \
 
-./configure   --prefix=builds/win_x86_64_msvc \
+
+#		--enable-debug --disable-optimizations \
+./configure --prefix=builds/win_x86_64_msvc \
 		--enable-shared --disable-static \
 		--enable-asm --enable-x86asm \
 		--arch=x86_64 --target-os=win64 --toolchain=msvc \
@@ -78,5 +80,4 @@ REPO_ROOT=/d/projects/DemolitionStudios/hapunityplugin
     --extra-cflags="-I ${REPO_ROOT}/3rdparty/GPURealTimeBC6H/include" \
 		--extra-ldflags="-LIBPATH:${REPO_ROOT}/3rdparty/GPURealTimeBC6H/lib" \
     --extra-cflags="-I ${REPO_ROOT}/3rdparty/zlib/include" \
-		--extra-ldflags="-LIBPATH:${REPO_ROOT}/3rdparty/zlib/lib" \
-    --extra-ldflags="-LIBPATH:${REPO_ROOT}/3rdparty/ffmpeg/libswscale"
+		--extra-ldflags="-LIBPATH:${REPO_ROOT}/3rdparty/zlib/lib"
