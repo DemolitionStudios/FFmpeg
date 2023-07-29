@@ -77,6 +77,8 @@ typedef struct HapContext {
     int opt_chunk_count; /* User-requested chunk count (encoder only) */
     int opt_compressor; /* User-requested compressor (encoder only) */
 	int opt_gdeflate_level; /* User-requested GDeflate compression level (encoder only) */
+	int opt_texture_quality; /* User-requested texture compression quality (encoder only) */
+	float opt_hap_h_normalization_factor; /* User-requested Hap H normalization factor (encoder only) */
 
     int chunk_count;
     HapChunk *chunks;

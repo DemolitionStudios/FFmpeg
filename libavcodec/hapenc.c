@@ -32,6 +32,8 @@
 #define USE_DIRECTXTEX 0
 
 #include <stdint.h>
+#include <float.h>
+
 #include "snappy-c.h"
 #include "gdeflate-c.h"
 #include "bc7e_ispc.h"
@@ -57,6 +59,7 @@
 #define HAP_SNAPPY_FIXED_CHUNK_SIZE 65536
 
 #define GDEFLATE_NUM_THREADS 32
+
 
 enum HapHeaderLength {
     /* Short header: four bytes with a 24 bit size value */
@@ -153,9 +156,9 @@ static AVFrame* toRGBAF32(AVFrame* frame)
 				int offsetPlanar = j * frame->linesize[0] + i * sizeof(float);
 
 				float* ptr = (float*)(frameRGBAF32->data[0] + offset);
-				ptr[0] = *((float*)(frame->data[2] + offsetPlanar)) / 255.f;
-				ptr[1] = *((float*)(frame->data[1] + offsetPlanar)) / 255.f;
-				ptr[2] = *((float*)(frame->data[0] + offsetPlanar)) / 255.f;
+				ptr[0] = *((float*)(frame->data[2] + offsetPlanar));// / 255.f;
+				ptr[1] = *((float*)(frame->data[1] + offsetPlanar));// / 255.f;
+				ptr[2] = *((float*)(frame->data[0] + offsetPlanar));// / 255.f;
 			}
 		}
 	} else {
@@ -341,6 +344,8 @@ static int compress_texture(AVCodecContext *avctx, uint8_t *out, int out_length,
 
 		uint32_t srcFormat = GPURealTimeBC6H_ImageFormat_RGBA32F;
 		GPURealTimeBC6H_Image dstImage;
+		/// TODO: fix on Nvidia (unable to create texture)
+		/// Access from different thread due to frame threading should be ok
 		bool ok = GPURealTimeBC6H_Compress(&srcImage, srcFormat, &dstImage);
 		if (!ok) {
 			av_log(avctx, AV_LOG_ERROR, "GPURealTimeBC6H_Compress error");
@@ -567,6 +572,7 @@ static av_cold int hap_init(AVCodecContext *avctx)
 {
     HapContext *ctx = avctx->priv_data;
     int corrected_chunk_count;
+	int preset;
     int ret = av_image_check_size(avctx->width, avctx->height, 0, avctx);
 
     if (ret < 0) {
@@ -611,20 +617,32 @@ static av_cold int hap_init(AVCodecContext *avctx)
 		//ff_bc7enc16_init(&ctx->bc7c, BC7ENC16_TRUE /* perceptual */, BC7ENC16_MAX_PARTITIONS1 /* max_partitions_to_scan */, 0 /* uber_level */); // We use bc7e now
 		bc7e_compress_block_init();
 		/// TODO: compare & add 2-3 presets with quality parameter
-		bc7e_compress_block_params_init_ultrafast(&ctx->bc7e_params, true /* perceptual */);
-		//bc7e_compress_block_params_init_basic(&ctx->bc7e_params, true /* perceptual */);
-		//bc7e_compress_block_params_init_basic(&ctx->bc7e_params, true /* perceptual */);
-		//bc7e_compress_block_params_init_fast(&ctx->bc7e_params, true /* perceptual */);
-		//bc7e_compress_block_params_init_slow(&ctx->bc7e_params, true /* perceptual */);
-		//bc7e_compress_block_params_init_slowest(&ctx->bc7e_params, true /* perceptual */);
-		//bc7e_compress_block_params_init_veryfast(&ctx->bc7e_params, true /* perceptual */);
+		if (ctx->opt_texture_quality == 0)
+		{
+			av_log(avctx, AV_LOG_ERROR, "Using bc7e_compress_block_params_init_ultrafast preset\n");
+			bc7e_compress_block_params_init_ultrafast(&ctx->bc7e_params, true /* perceptual */);
+		}
+		else
+		{
+			av_log(avctx, AV_LOG_ERROR, "Using bc7e_compress_block_params_init_basic preset\n");
+			//bc7e_compress_block_params_init_veryfast(&ctx->bc7e_params, true /* perceptual */);
+			bc7e_compress_block_params_init_basic(&ctx->bc7e_params, true /* perceptual */);
+			//bc7e_compress_block_params_init_fast(&ctx->bc7e_params, true /* perceptual */);
+			//bc7e_compress_block_params_init_slow(&ctx->bc7e_params, true /* perceptual */);
+			//bc7e_compress_block_params_init_slowest(&ctx->bc7e_params, true /* perceptual */);
+		}
         break;
 	case HAP_FMT_BPTC_FU:
 		ctx->enc.tex_ratio = 16;
 		avctx->codec_tag = MKTAG('H', 'a', 'p', 'H');
 		avctx->bits_per_coded_sample = 32;
 
-		GPURealTimeBC6H_Initialize(GPURealTimeBC6H_Preset_Speed);
+		preset = ctx->opt_texture_quality == 0 ? GPURealTimeBC6H_Preset_Speed : GPURealTimeBC6H_Preset_Quality;
+		if (preset == GPURealTimeBC6H_Preset_Speed)
+			av_log(avctx, AV_LOG_ERROR, "Using GPURealTimeBC6H_Preset_Speed preset\n");
+		else
+			av_log(avctx, AV_LOG_ERROR, "Using GPURealTimeBC6H_Preset_Quality preset\n");
+		GPURealTimeBC6H_Initialize(preset);
 		break;
     default:
         av_log(avctx, AV_LOG_ERROR, "Invalid format %02X\n", ctx->opt_tex_fmt);
@@ -742,6 +760,8 @@ static const AVOption options[] = {
 		{ "hap_h",     "Hap HDR (BC6H textures)", 0, AV_OPT_TYPE_CONST, {.i64 = HAP_FMT_BPTC_FU }, 0, 0, FLAGS, "format" },
 	{ "chunks", "chunk count", OFFSET(opt_chunk_count), AV_OPT_TYPE_INT, {.i64 = 1 }, -1, HAP_SNAPPY_MAX_CHUNKS, FLAGS, },
 	{ "gdeflate_level", "GDeflate compression level", OFFSET(opt_gdeflate_level), AV_OPT_TYPE_INT, {.i64 = GDeflateMinimumCompressionLevel }, GDeflateMinimumCompressionLevel, GDeflateMaximumCompressionLevel, FLAGS, },
+	{ "texture_quality", "Texture encoding quality for hap_r and hap_h (0=prefer speed, 1=prefer quality)", OFFSET(opt_texture_quality), AV_OPT_TYPE_INT, {.i64 = 0 }, 0, 1, FLAGS, },
+	{ "hap_h_normalization_factor", "Hap H input normalization factor", OFFSET(opt_hap_h_normalization_factor), AV_OPT_TYPE_FLOAT, {.i64 = 0 }, 0, FLT_MAX, FLAGS, },
 	{ "compressor", "second-stage compressor", OFFSET(opt_compressor), AV_OPT_TYPE_INT, { .i64 = HAP_COMP_SNAPPY }, HAP_COMP_NONE, HAP_COMP_GDEFLATE, FLAGS, "compressor" },
         { "none",       "None", 0, AV_OPT_TYPE_CONST, { .i64 = HAP_COMP_NONE }, 0, 0, FLAGS, "compressor" },
         { "snappy",     "Snappy", 0, AV_OPT_TYPE_CONST, { .i64 = HAP_COMP_SNAPPY }, 0, 0, FLAGS, "compressor" },
