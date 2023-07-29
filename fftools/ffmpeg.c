@@ -108,6 +108,9 @@
 
 #include "libavutil/avassert.h"
 
+
+//__declspec(dllexport) unsigned long NvOptimusEnablement = 0x00000001;
+
 const char program_name[] = "ffmpeg";
 const int program_birth_year = 2000;
 
