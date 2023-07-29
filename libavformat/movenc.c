@@ -6340,7 +6340,7 @@ static int mov_write_single_packet(AVFormatContext *s, AVPacket *pkt)
     int size = pkt->size;
 
 	if (size > s->max_packet_size) {
-		av_log(s, AV_LOG_WARNING, "s->max_packet_size: %d\n", s->max_packet_size);
+		//av_log(s, AV_LOG_WARNING, "s->max_packet_size: %d\n", s->max_packet_size);
 		s->max_packet_size = size;
 
 		#define STR_SIZE 20
@@ -6348,7 +6348,7 @@ static int mov_write_single_packet(AVFormatContext *s, AVPacket *pkt)
 		snprintf(max_packet_size_str, STR_SIZE, "%d", size);
 		av_dict_set(&s->metadata, "max_packet_size", max_packet_size_str, 0);
 
-		av_log(s, AV_LOG_WARNING, "New max packet size: %d\n", size);
+		//av_log(s, AV_LOG_WARNING, "New max packet size: %d\n", size);
 	}
 
     int ret = check_pkt(s, pkt);
