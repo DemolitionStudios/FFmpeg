@@ -87,7 +87,7 @@ static bool hap_is_fixed_chunk_size(HapContext* ctx)
 // Compressonator HPC: 16
 // Compressonator DXC: 
 
-static AVFrame* toRGBAF32(AVFrame* frame)
+static AVFrame* toRGBAF32(HapContext* ctx, AVFrame* frame)
 {
 	int width = frame->width;
 	int height = frame->height;
@@ -115,9 +115,9 @@ static AVFrame* toRGBAF32(AVFrame* frame)
 				int offset = j * frameRGBAF32->linesize[0] + i * 4 * sizeof(float);
 
 				float* ptr = (float*)(frameRGBAF32->data[0] + offset);
-				ptr[0] = (float)(ptrRGBA[0] / 255.f);
-				ptr[1] = (float)(ptrRGBA[1] / 255.f);
-				ptr[2] = (float)(ptrRGBA[2] / 255.f);
+				ptr[0] = ptrRGBA[0] / ctx->opt_hap_h_normalization_factor;
+				ptr[1] = ptrRGBA[1] / ctx->opt_hap_h_normalization_factor;
+				ptr[2] = ptrRGBA[2] / ctx->opt_hap_h_normalization_factor;
 
 				// Debug
 				// all 1.0 = white
@@ -156,9 +156,9 @@ static AVFrame* toRGBAF32(AVFrame* frame)
 				int offsetPlanar = j * frame->linesize[0] + i * sizeof(float);
 
 				float* ptr = (float*)(frameRGBAF32->data[0] + offset);
-				ptr[0] = *((float*)(frame->data[2] + offsetPlanar));// / 255.f;
-				ptr[1] = *((float*)(frame->data[1] + offsetPlanar));// / 255.f;
-				ptr[2] = *((float*)(frame->data[0] + offsetPlanar));// / 255.f;
+				ptr[0] = *((float*)(frame->data[2] + offsetPlanar)) / ctx->opt_hap_h_normalization_factor;
+				ptr[1] = *((float*)(frame->data[1] + offsetPlanar)) / ctx->opt_hap_h_normalization_factor;
+				ptr[2] = *((float*)(frame->data[0] + offsetPlanar)) / ctx->opt_hap_h_normalization_factor;
 			}
 		}
 	} else {
@@ -330,7 +330,7 @@ static int compress_texture(AVCodecContext *avctx, uint8_t *out, int out_length,
 		DirectXTex_FreeOutputImage(&dstImage);
 		av_free(blocks);
 #else
-		AVFrame* rgbaf32frame = toRGBAF32(f);
+		AVFrame* rgbaf32frame = toRGBAF32(ctx, f);
 		if (!rgbaf32frame) {
 			av_log(avctx, AV_LOG_ERROR, "toRGBAF32 failed\n");
 			return AVERROR_INVALIDDATA;
@@ -760,7 +760,7 @@ static const AVOption options[] = {
 	{ "gdeflate_level", "GDeflate compression level", OFFSET(opt_gdeflate_level), AV_OPT_TYPE_INT, {.i64 = GDeflateMinimumCompressionLevel }, GDeflateMinimumCompressionLevel, GDeflateMaximumCompressionLevel, FLAGS, },
 	{ "texture_quality_hap_r", "Texture encoding quality for Hap R (0=prefer speed (default), 1=balanced, 2=prefer quality)", OFFSET(opt_texture_quality_hap_r), AV_OPT_TYPE_INT, {.i64 = 0 }, 0, 2, FLAGS, },
 	{ "texture_quality_hap_h", "Texture encoding quality for Hap H (0=prefer speed, 1=prefer quality (default))", OFFSET(opt_texture_quality_hap_h), AV_OPT_TYPE_INT, {.i64 = 1 }, 0, 1, FLAGS, },
-	{ "hap_h_normalization_factor", "Hap H input normalization factor", OFFSET(opt_hap_h_normalization_factor), AV_OPT_TYPE_FLOAT, {.i64 = 0 }, 0, FLT_MAX, FLAGS, },
+	{ "hap_h_normalization_factor", "Hap H input normalization factor", OFFSET(opt_hap_h_normalization_factor), AV_OPT_TYPE_FLOAT, {.dbl = 1.0 }, -FLT_MAX, FLT_MAX, FLAGS, },
 	{ "compressor", "second-stage compressor", OFFSET(opt_compressor), AV_OPT_TYPE_INT, { .i64 = HAP_COMP_SNAPPY }, HAP_COMP_NONE, HAP_COMP_GDEFLATE, FLAGS, "compressor" },
         { "none",       "None", 0, AV_OPT_TYPE_CONST, { .i64 = HAP_COMP_NONE }, 0, 0, FLAGS, "compressor" },
         { "snappy",     "Snappy", 0, AV_OPT_TYPE_CONST, { .i64 = HAP_COMP_SNAPPY }, 0, 0, FLAGS, "compressor" },
