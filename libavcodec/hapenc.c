@@ -108,15 +108,20 @@ static AVFrame* toRGBAF32(HapContext* ctx, AVFrame* frame)
 	// Note: alpha channel is ignored in bc6 encoding, so we don't set it at all
 	int i, j;
 	if (frame->format == AV_PIX_FMT_RGBA) {
+		float normalization_factor = 255.f;
+		if (ctx->opt_hap_h_normalization_factor != 0.f) {
+			normalization_factor = ctx->opt_hap_h_normalization_factor;
+		}
+
 		for (j = 0; j < height; j += 1) {
 			for (i = 0; i < width; i += 1) {
 				const uint8_t* ptrRGBA = frame->data[0] + j * frame->linesize[0] + i * 4;
 				int offset = j * frameRGBAF32->linesize[0] + i * 4 * sizeof(float);
 
 				float* ptr = (float*)(frameRGBAF32->data[0] + offset);
-				ptr[0] = ptrRGBA[0] / ctx->opt_hap_h_normalization_factor;
-				ptr[1] = ptrRGBA[1] / ctx->opt_hap_h_normalization_factor;
-				ptr[2] = ptrRGBA[2] / ctx->opt_hap_h_normalization_factor;
+				ptr[0] = ptrRGBA[0] / normalization_factor;
+				ptr[1] = ptrRGBA[1] / normalization_factor;
+				ptr[2] = ptrRGBA[2] / normalization_factor;
 
 				// Debug
 				// all 1.0 = white
@@ -149,15 +154,25 @@ static AVFrame* toRGBAF32(HapContext* ctx, AVFrame* frame)
 		//	//av_log(NULL, AV_LOG_ERROR, "i: %d, x: %f\n", *((int*)(&p[i])), p[i]);
 		//}
 	} else if (frame->format == AV_PIX_FMT_GBRAPF32) {
+		float normalization_factor = 1.f;
+		if (ctx->opt_hap_h_normalization_factor != 0.f) {
+			normalization_factor = ctx->opt_hap_h_normalization_factor;
+		}
+
 		for (j = 0; j < height; j += 1) {
 			for (i = 0; i < width; i += 1) {
 				int offset = j * frameRGBAF32->linesize[0] + i * 4 * sizeof(float);
 				int offsetPlanar = j * frame->linesize[0] + i * sizeof(float);
 
+				/// TODO: figure out if it's stated somewhere that ffmpeg automatically applies gamma to linear values stored inside EXR, but it seems so
+				// Convert to sRGB
+				//const float gamma = 1 / 2.2f; powf(value, gamma)
+
+				/// TODO: figure out why R / B channels are swapped
 				float* ptr = (float*)(frameRGBAF32->data[0] + offset);
-				ptr[0] = *((float*)(frame->data[2] + offsetPlanar)) / ctx->opt_hap_h_normalization_factor;
-				ptr[1] = *((float*)(frame->data[1] + offsetPlanar)) / ctx->opt_hap_h_normalization_factor;
-				ptr[2] = *((float*)(frame->data[0] + offsetPlanar)) / ctx->opt_hap_h_normalization_factor;
+				ptr[0] = *((float*)(frame->data[2] + offsetPlanar)) / normalization_factor; // G
+				ptr[1] = *((float*)(frame->data[0] + offsetPlanar)) / normalization_factor; // R ????
+				ptr[2] = *((float*)(frame->data[1] + offsetPlanar)) / normalization_factor; // B ????
 			}
 		}
 	} else {
@@ -726,9 +741,9 @@ static const AVOption options[] = {
 		{ "hap_h",     "Hap HDR (BC6H textures)", 0, AV_OPT_TYPE_CONST, {.i64 = HAP_FMT_BPTC_FU }, 0, 0, FLAGS, "format" },
 	{ "chunks", "chunk count", OFFSET(opt_chunk_count), AV_OPT_TYPE_INT, {.i64 = 1 }, -1, HAP_SNAPPY_MAX_CHUNKS, FLAGS, },
 	{ "gdeflate_level", "GDeflate compression level", OFFSET(opt_gdeflate_level), AV_OPT_TYPE_INT, {.i64 = GDeflateMinimumCompressionLevel }, GDeflateMinimumCompressionLevel, GDeflateMaximumCompressionLevel, FLAGS, },
-	{ "texture_quality_hap_r", "Texture encoding quality for Hap R (0=prefer speed (default), 1=balanced, 2=prefer quality)", OFFSET(opt_texture_quality_hap_r), AV_OPT_TYPE_INT, {.i64 = 0 }, 0, 2, FLAGS, },
-	{ "texture_quality_hap_h", "Texture encoding quality for Hap H (0=prefer speed, 1=prefer quality (default))", OFFSET(opt_texture_quality_hap_h), AV_OPT_TYPE_INT, {.i64 = 1 }, 0, 1, FLAGS, },
-	{ "hap_h_normalization_factor", "Hap H input normalization factor", OFFSET(opt_hap_h_normalization_factor), AV_OPT_TYPE_FLOAT, {.dbl = 1.0 }, -FLT_MAX, FLT_MAX, FLAGS, },
+	{ "texture_quality_hap_r", "Texture encoding quality for Hap R (0=prefer speed, 1=balanced, 2=prefer quality)", OFFSET(opt_texture_quality_hap_r), AV_OPT_TYPE_INT, {.i64 = 0 }, 0, 2, FLAGS, },
+	{ "texture_quality_hap_h", "Texture encoding quality for Hap H (0=prefer speed, 1=prefer quality)", OFFSET(opt_texture_quality_hap_h), AV_OPT_TYPE_INT, {.i64 = 1 }, 0, 1, FLAGS, },
+	{ "hap_h_normalization_factor", "Hap H input normalization factor (0.0 = use 1.0 for EXR input and 255.0 for RGBA input)", OFFSET(opt_hap_h_normalization_factor), AV_OPT_TYPE_FLOAT, {.dbl = 0.0 }, -FLT_MAX, FLT_MAX, FLAGS, },
 	{ "compressor", "second-stage compressor", OFFSET(opt_compressor), AV_OPT_TYPE_INT, { .i64 = HAP_COMP_SNAPPY }, HAP_COMP_NONE, HAP_COMP_GDEFLATE, FLAGS, "compressor" },
         { "none",       "None", 0, AV_OPT_TYPE_CONST, { .i64 = HAP_COMP_NONE }, 0, 0, FLAGS, "compressor" },
         { "snappy",     "Snappy", 0, AV_OPT_TYPE_CONST, { .i64 = HAP_COMP_SNAPPY }, 0, 0, FLAGS, "compressor" },
