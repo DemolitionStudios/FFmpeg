@@ -105,7 +105,6 @@ static AVFrame* toRGBAF32(HapContext* ctx, AVFrame* frame)
 		av_image_fill_arrays(frameRGBAF32->data, frameRGBAF32->linesize, dataBuffer, AV_PIX_FMT_RGBAF32, width, height, 1);
 	}
 
-#if 1
 	// Note: alpha channel is ignored in bc6 encoding, so we don't set it at all
 	int i, j;
 	if (frame->format == AV_PIX_FMT_RGBA) {
@@ -164,37 +163,6 @@ static AVFrame* toRGBAF32(HapContext* ctx, AVFrame* frame)
 	} else {
 		av_log(NULL, AV_LOG_ERROR, "Only supported AV_PIX_FMT_RGBA and AV_PIX_FMT_GBRAPF32 for hap_h\n");
 	}
-#else
-	// 128bpp not supported by yuv2rgb :(
-	// rgbaf32le is not supported as output pixel format
-	struct SwsContext* YUVScaleCtx = sws_getContext
-	(
-		width,
-		height,
-		frame->format,
-		width,
-		height,
-		AV_PIX_FMT_RGBAF32,
-		SWS_BILINEAR,
-		0,
-		0,
-		0
-	);
-
-	int sws_scale_height = sws_scale(
-		YUVScaleCtx,
-		(const uint8_t* const*)frame->data,
-		frame->linesize, // stride is the size of a line + potential padding for performance issue
-		0,
-		height,
-		frameRGBAF32->data,
-		frameRGBAF32->linesize
-	);
-	if (height <= 0) {
-		av_log(NULL, AV_LOG_ERROR, "AV_PIX_FMT_RGBA source format required for Hap R\n");
-		return NULL;
-	}
-#endif
 	return frameRGBAF32;
 }
 
