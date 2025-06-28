@@ -29,7 +29,6 @@
  * https://github.com/Vidvox/hap/blob/master/documentation/HapVideoDRAFT.md
  */
 
-#define USE_DIRECTXTEX 0
 
 #include <stdint.h>
 #include <float.h>
@@ -37,9 +36,6 @@
 #include "snappy-c.h"
 #include "gdeflate-c.h"
 #include "bc7e_ispc.h"
-#if USE_DIRECTXTEX
-	#include "DirectXTex-c.h"
-#endif
 #include "GPURealTimeBC6H-c.h"
 
 #include "libavutil/frame.h"
@@ -72,20 +68,6 @@ static bool hap_is_fixed_chunk_size(HapContext* ctx)
 {
     return ctx->opt_chunk_count < 0;
 }
-
-// FPS
-// 
-// BC7, 1080p
-// Default: 1.3
-// Compressonator CPU: 3.3
-// Compressonator HPC: 3.3 
-// Compressonator DXC: 1.1
-
-// DXT1, 1080p
-// Default: 27
-// Compressonator CPU: 16
-// Compressonator HPC: 16
-// Compressonator DXC: 
 
 static AVFrame* toRGBAF32(HapContext* ctx, AVFrame* frame)
 {
@@ -196,7 +178,6 @@ static int compress_texture(AVCodecContext *avctx, uint8_t *out, int out_length,
 			return AVERROR_INVALIDDATA;
 		}
 
-#if !USE_DIRECTXTEX
 		// https://github.com/GPUOpen-Tools/compressonator/blob/815d1b6fa01223cdbeb3e399e56b44e5c10fcdd7/cmp_compressonatorlib/buffer/codecbuffer_rgba8888.cpp
 		/// TODO: make a special "color space" for it. so we transform directly from 420p->blocks
 		/// TODO: or in-place conversion to save memory while using threads, cache only transformed 4-pixel rows
@@ -222,97 +203,7 @@ static int compress_texture(AVCodecContext *avctx, uint8_t *out, int out_length,
 		bc7e_compress_blocks(num_blocks, out, blocks, &ctx->bc7e_params);
 
 		av_free(blocks);
-#else
-		// DirectXTex test
-		struct Image srcImage, dstImage;
-		srcImage.width = avctx->width;
-		srcImage.height = avctx->height;
-		srcImage.format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		srcImage.rowPitch = avctx->width * sizeof(uint8_t) * 4;
-		srcImage.slicePitch = avctx->width * avctx->height * sizeof(uint8_t) * 4;
-		float* blocks = (uint8_t*)av_malloc(srcImage.slicePitch);
-		float* blocks_ptr = blocks;
-		for (j = 0; j < avctx->height; j += 1) {
-			for (i = 0; i < avctx->width; i += 1) {
-				blocks_ptr[0] = ((float*)f->data[0])[j * avctx->width + i];
-				blocks_ptr[1] = ((float*)f->data[1])[j * avctx->width + i];
-				blocks_ptr[2] = ((float*)f->data[2])[j * avctx->width + i];
-				blocks_ptr[3] = ((float*)f->data[3])[j * avctx->width + i];
-				blocks_ptr += 4;
-			}
-		}
-		//srcImage.pixels = f->data[0];
-		srcImage.pixels = blocks;
-		uint32_t format = DXGI_FORMAT_BC7_UNORM;
-		uint32_t flags = TEX_COMPRESS_PARALLEL;
-		HRESULT result = DirectXTex_Compress(&srcImage, format, flags, TEX_THRESHOLD_DEFAULT_V, &dstImage);
-		if (FAILED(result))
-		{
-			av_log(avctx, AV_LOG_ERROR, "DirectXTex_Compress failed\n");
-			return AVERROR_BUG;
-		}
-
-		av_log(avctx, AV_LOG_ERROR, "Input image size %dx%d rowPitch %d.\n",
-			srcImage.width, srcImage.height, srcImage.rowPitch);
-		av_log(avctx, AV_LOG_ERROR, "Output bc7 image size %dx%d rowPitch %d slicePitch %d format %d.\n",
-			dstImage.width, dstImage.height, dstImage.rowPitch, dstImage.slicePitch, dstImage.format);
-		av_log(avctx, AV_LOG_ERROR, "out_length %d, .\n",
-			out_length);
-
-		memcpy(out, dstImage.pixels, out_length);
-
-		DirectXTex_FreeOutputImage(&dstImage);
-		av_free(blocks);
-#endif
 	} else if (ctx->opt_tex_fmt == HAP_FMT_BPTC_FU) {
-#if USE_DIRECTXTEX
-		// DirectXTex test (didn't get it to work and very slow)
-		
-		// TODO: reorder
-		// TODO: try artificial image with bar
-		// TODO: check if we really get converted to float frame by size
-		// TODO: try directxtex without ffmpeg
-
-		struct Image srcImage, dstImage;
-		srcImage.width = avctx->width;
-		srcImage.height = avctx->height;
-		srcImage.format = DXGI_FORMAT_R32G32B32A32_FLOAT;
-		srcImage.rowPitch = avctx->width * sizeof(float) * 4;
-		srcImage.slicePitch = avctx->width * avctx->height * sizeof(float) * 4;
-		float* blocks = (uint8_t*)av_malloc(srcImage.slicePitch);
-		float* blocks_ptr = blocks;
-		for (j = 0; j < avctx->height; j += 1) {
-			for (i = 0; i < avctx->width; i += 1) {
-				blocks_ptr[0] = ((float*)f->data[0])[j * avctx->width + i];
-				blocks_ptr[1] = ((float*)f->data[1])[j * avctx->width + i];
-				blocks_ptr[2] = ((float*)f->data[2])[j * avctx->width + i];
-				blocks_ptr[3] = ((float*)f->data[3])[j * avctx->width + i];
-				blocks_ptr += 4;
-			}
-		}
-		//srcImage.pixels = f->data[0];
-		srcImage.pixels = blocks;
-		uint32_t format = DXGI_FORMAT_BC6H_UF16;
-		uint32_t flags = TEX_COMPRESS_PARALLEL;
-		HRESULT result = DirectXTex_Compress(&srcImage, format, flags, TEX_THRESHOLD_DEFAULT_V, &dstImage);
-		if (FAILED(result))
-		{
-			av_log(avctx, AV_LOG_ERROR, "DirectXTex_Compress failed\n");
-			return AVERROR_BUG;
-		}
-
-		av_log(avctx, AV_LOG_ERROR, "Input image size %dx%d rowPitch %d.\n",
-			srcImage.width, srcImage.height, srcImage.rowPitch);
-		av_log(avctx, AV_LOG_ERROR, "Output bc6h image size %dx%d rowPitch %d slicePitch %d format %d.\n",
-			dstImage.width, dstImage.height, dstImage.rowPitch, dstImage.slicePitch, dstImage.format);
-		av_log(avctx, AV_LOG_ERROR, "out_length %d, .\n",
-			out_length);
-
-		memcpy(out, dstImage.pixels, out_length);
-
-		DirectXTex_FreeOutputImage(&dstImage);
-		av_free(blocks);
-#else
 		AVFrame* rgbaf32frame = toRGBAF32(ctx, f);
 		if (!rgbaf32frame) {
 			av_log(avctx, AV_LOG_ERROR, "toRGBAF32 failed\n");
@@ -338,7 +229,6 @@ static int compress_texture(AVCodecContext *avctx, uint8_t *out, int out_length,
 		memcpy(out, dstImage.data, out_length);
 
 		GPURealTimeBC6H_FreeImage(&dstImage);
-#endif
 	} else {
 		if (f->format != AV_PIX_FMT_RGBA)
 			return AVERROR_INVALIDDATA;
@@ -704,31 +594,6 @@ static av_cold int hap_close(AVCodecContext *avctx)
 
     return 0;
 }
-
-/* TODO */
-/*
-  1. GPU encoder : GPU snappy / gdeflate(cuda) + GPU texture compression
-  FFmpeg or CC based : https://github.com/disguise-one/hap-encoder-adobe-cc
-  https://notchlc.notch.one/: encode speed baseline
-  By utilizing the full power of the GPU to massively accelerate the encoding process,
-  you can expect to encode 1080p24 at a rate of 5.7 mins of footage in 1 minute of encoding(on a consumer - grade PC).
-
-      https ://github.com/GPUOpen-Tools/compressonator/tree/master/cmp_core/shaders
-      or
-      https ://github.com/richgel999/bc7enc_rdo
-      https ://github.com/BinomialLLC/bc7e
-      https ://github.com/richgel999/bc7enc
-      https ://github.com/richgel999/bc7enc16
-	  https://github.com/aras-p/bc7e-on-gpu
-      https ://www.phoronix.com/news/OSS-Game-Industry-Concerns
-      https ://twitter.com/richgel999/status/1454580043607334915
-      https ://github.com/walbourn/directx-sdk-samples/tree/main/BC6HBC7EncoderCS
-      https ://github.com/mvji/SPX-GC
-
-  2. Try lossless texture compression: uncompressed YUV format - good for gdeflate probably (planar)
-  3. Fix decreasing fps (initial probe loads 5s of input video - so it's expected)
-  4. NotchLC capture shaders with PIX
-  */
 
 #define OFFSET(x) offsetof(HapContext, x)
 #define FLAGS     AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM

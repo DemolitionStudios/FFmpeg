@@ -1849,9 +1849,8 @@ EXTERNAL_LIBRARY_LIST="
     libshine
     libsmbclient
     libsnappy
-	  libgdeflate
+    libgdeflate
     libbc7e
-    libdirectxtex
     libgpurealtimebc6h
     libsoxr
     libspeex
@@ -2448,7 +2447,7 @@ CONFIG_EXTRA="
     fmtconvert
     frame_thread_encoder
     g722dsp
-	gdeflate
+    gdeflate
     golomb
     gplv3
     h263dsp
@@ -2835,9 +2834,8 @@ h264_decoder_select="cabac golomb h264chroma h264dsp h264parse h264pred h264qpel
 h264_decoder_suggest="error_resilience"
 hap_decoder_select="snappy texturedsp"
 hap_encoder_deps="avutil swscale libsnappy libgdeflate libbc7e libgpurealtimebc6h"
-hap_encoder_select="libdirectxtex"
-hevc_decoder_select="bswapdsp cabac dovi_rpu golomb hevcparse hevc_sei videodsp"
 hap_encoder_select="texturedspenc swscale"
+hevc_decoder_select="bswapdsp cabac dovi_rpu golomb hevcparse hevc_sei videodsp"
 huffyuv_decoder_select="bswapdsp huffyuvdsp llviddsp"
 huffyuv_encoder_select="bswapdsp huffman huffyuvencdsp llvidencdsp"
 hymt_decoder_select="huffyuv_decoder"
@@ -6674,7 +6672,6 @@ enabled libsmbclient      && { check_pkg_config libsmbclient smbclient libsmbcli
 enabled libsnappy         && require libsnappy snappy-c.h snappy_compress -lsnappy64 -lstdc++
 enabled libgdeflate       && require libgdeflate gdeflate-c.h gdeflate_compress -lGDeflate -ldeflate -lstdc++
 enabled libbc7e           && require libbc7e bc7e_ispc.h bc7e_compress_blocks -lbc7e
-enabled libdirectxtex     && require libdirectxtex DirectXTex-c.h DirectXTex_Compress -lDirectXTex -lOle32 -lstdc++
 enabled libgpurealtimebc6h&& require libgpurealtimebc6h GPURealTimeBC6H-c.h GPURealTimeBC6H_Compress -lGPURealTimeBC6H -ld3d11 -lstdc++ 
 enabled libsoxr           && require libsoxr soxr.h soxr_create -lsoxr
 enabled libssh            && require_pkg_config libssh libssh libssh/sftp.h sftp_init
