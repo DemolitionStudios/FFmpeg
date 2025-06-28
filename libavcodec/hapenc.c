@@ -25,7 +25,7 @@
  * @file
  * Hap encoder
  *
- * Fourcc: Hap1, Hap5, HapY
+ * Fourcc: Hap1, Hap5, HapY, HapA, HapM, Hap7, HapH
  *
  * https://github.com/Vidvox/hap/blob/master/documentation/HapVideoDRAFT.md
  */
