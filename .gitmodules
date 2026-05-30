@@ -1,0 +1,6 @@
+[submodule "bc7e"]
+	path = bc7e
+	url = https://github.com/BinomialLLC/bc7e.git
+[submodule "libavcodec/bc7e"]
+	path = libavcodec/bc7e
+	url = https://github.com/BinomialLLC/bc7e.git
